@@ -260,7 +260,6 @@ class ContourGradientBorder extends OutlinedBorder {
       rect,
       textDirection,
       built,
-      margin,
       fillGaps: outline == null ? 1 / scale : 0,
     );
     built.vertices.dispose();
@@ -367,15 +366,17 @@ class ContourGradientBorder extends OutlinedBorder {
     Canvas canvas,
     Rect rect,
     TextDirection? textDirection,
-    ({ui.Vertices vertices, Rect bounds}) built,
-    double margin, {
+    ({ui.Vertices vertices, Rect bounds}) built, {
     required double fillGaps,
   }) {
-    final Rect bounds = built.bounds.inflate(margin);
     // Where the band overlaps itself, at corners, the last quad wins instead
     // of blending, so translucent colors stay even.
     final Paint replace = Paint()..blendMode = BlendMode.src;
-    canvas.saveLayer(bounds, Paint());
+    // The layers are given no bounds, so they line up with the canvas. Some
+    // versions of the engine anti-alias a shape slightly differently
+    // depending on where a layer starts, so the mask would not match the
+    // shape's own border.
+    canvas.saveLayer(null, Paint());
     // Where the band's pieces meet, as at the centre of a tight curve on a
     // thick border, gaps of a pixel or so can be left between them. Copies
     // shifted by a device pixel underneath fill them with the neighbouring
@@ -396,7 +397,7 @@ class ContourGradientBorder extends OutlinedBorder {
     }
     canvas
       ..drawVertices(built.vertices, BlendMode.dst, replace)
-      ..saveLayer(bounds, Paint()..blendMode = BlendMode.dstIn);
+      ..saveLayer(null, Paint()..blendMode = BlendMode.dstIn);
     _paintOutline(canvas, rect, textDirection, const Color(0xFF000000));
     canvas
       ..restore()
