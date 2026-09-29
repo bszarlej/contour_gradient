@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Flutter ${{ matrix.flutter-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest version the package supports, matching the environment
+        # in pubspec.yaml, and the latest stable release.
+        flutter-version: ['3.32.x', 'stable']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ matrix.flutter-version != 'stable' && matrix.flutter-version || '' }}
+          cache: true
+
+      # The example app needs a newer SDK than the package, so it is only
+      # checked on the latest stable release.
+      - name: Install dependencies
+        run: flutter pub get ${{ matrix.flutter-version != 'stable' && '--no-example' || '' }}
+
+      - name: Check formatting
+        if: matrix.flutter-version == 'stable'
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze ${{ matrix.flutter-version != 'stable' && 'lib test' || '' }}
+
+      - name: Run tests
+        run: flutter test
