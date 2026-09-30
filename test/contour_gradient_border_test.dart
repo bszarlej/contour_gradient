@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -60,6 +61,43 @@ class Pixels {
   }
 
   int alphaAt(int index) => data.getUint8(index * 4 + 3);
+}
+
+/// A [BeveledRectangleBorder] whose border is as wide as its side
+/// everywhere, unlike Flutter's own, which is twice as wide.
+///
+/// Its outline is stroked with mitered corners and clipped to the side of the
+/// outline that the stroke is aligned to.
+class EvenBeveledBorder extends BeveledRectangleBorder {
+  const EvenBeveledBorder({super.side, super.borderRadius});
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    final Path outline = getOuterPath(rect, textDirection: textDirection);
+    final Paint paint = Paint()
+      ..color = side.color
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.miter;
+    if (side.strokeAlign == BorderSide.strokeAlignCenter) {
+      canvas.drawPath(outline, paint..strokeWidth = side.width);
+      return;
+    }
+    assert(
+      side.strokeAlign == BorderSide.strokeAlignInside ||
+          side.strokeAlign == BorderSide.strokeAlignOutside,
+    );
+    final Path clip = side.strokeAlign == BorderSide.strokeAlignInside
+        ? outline
+        : (Path()
+            ..fillType = PathFillType.evenOdd
+            ..addRect(rect.inflate(side.width * 2 + 1))
+            ..addPath(outline, Offset.zero));
+    canvas
+      ..save()
+      ..clipPath(clip)
+      ..drawPath(outline, paint..strokeWidth = side.width * 2)
+      ..restore();
+  }
 }
 
 Matcher isColorCloseTo(Color expected, {double tolerance = 0.03}) {
@@ -171,9 +209,13 @@ void main() {
       // Flutter's own LinearBorder only paints correctly at the origin; the
       // gradient border must match it at an offset. Other shapes are painted
       // at the same offset, since some edge pixels differ slightly when the
-      // canvas is moved instead.
+      // canvas is moved instead. Flutter's own BeveledRectangleBorder is
+      // twice as wide as its side, so it is compared with the band between
+      // its outlines.
       final Pixels expected = await render(
-        shape.copyWith(side: side),
+        shape is BeveledRectangleBorder
+            ? EvenBeveledBorder(borderRadius: shape.borderRadius, side: side)
+            : shape.copyWith(side: side),
         size,
         atOrigin: shape is LinearBorder,
       );
@@ -236,6 +278,52 @@ void main() {
         ),
         lessThanOrEqualTo(40),
       );
+    });
+
+    test('a beveled border is as wide as its side', () async {
+      const Size size = Size(120, 80);
+      const BorderRadius radius = BorderRadius.all(Radius.circular(12));
+      // How wide the border is where it runs through [from] in [direction]:
+      // the coverage of the pixels on a line across it, added up every 0.05,
+      // and averaged over lines up to 4 either side of [from]. Unlike
+      // counting covered pixels, this also measures diagonal edges, whose
+      // pixels are only partly covered.
+      double widthAt(Pixels pixels, Offset from, Offset direction) {
+        final Offset across = Offset(-direction.dy, direction.dx);
+        double sum = 0;
+        int lines = 0;
+        for (double s = -4; s <= 4; s += 0.25) {
+          lines++;
+          for (double t = -10; t < 10; t += 0.05) {
+            final Offset p = from + direction * s + across * t;
+            sum += pixels.at(p.dx, p.dy).a * 0.05;
+          }
+        }
+        return sum / lines;
+      }
+
+      for (final double align in aligns.values) {
+        final Pixels pixels = await render(
+          ContourGradientBorder(
+            colors: const <Color>[red, blue],
+            shape: const BeveledRectangleBorder(borderRadius: radius),
+            side: BorderSide(width: 4, strokeAlign: align),
+          ),
+          size,
+        );
+        // Across the middle of the top side, and across the middle of the
+        // top-left bevel, which runs from (0, 12) to (12, 0).
+        expect(
+          widthAt(pixels, const Offset(60, 0), const Offset(1, 0)),
+          closeTo(4, 0.25),
+          reason: 'side, strokeAlign $align',
+        );
+        expect(
+          widthAt(pixels, const Offset(6, 6), const Offset(1, -1) / math.sqrt2),
+          closeTo(4, 0.25),
+          reason: 'bevel, strokeAlign $align',
+        );
+      }
     });
 
     test(

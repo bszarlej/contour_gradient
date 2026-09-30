@@ -1,3 +1,9 @@
+## 1.0.1
+
+* Fixed a `BeveledRectangleBorder` shape's border being twice as wide as its
+  side, as Flutter's own `BeveledRectangleBorder` paints it. It is now as wide
+  as its side everywhere, on the bevels too.
+
 ## 1.0.0
 
 Initial release.

@@ -412,6 +412,12 @@ class ContourGradientBorder extends OutlinedBorder {
   /// meet inside a pixel, a faint line shows between them. It also places
   /// some edges as if [rect] started at the origin. Its edges are filled as
   /// one path here instead.
+  ///
+  /// [BeveledRectangleBorder.paint] strokes both the outer and the inner
+  /// outline of its border with the side's width, which makes the border
+  /// twice as wide, and its outlines are closer together on the bevels than
+  /// on the sides. The band between two outlines that are the same distance
+  /// apart everywhere is filled here instead.
   void _paintOutline(
     Canvas canvas,
     Rect rect,
@@ -433,9 +439,79 @@ class ContourGradientBorder extends OutlinedBorder {
       canvas.drawPath(path, Paint()..color = color);
       return;
     }
+    if (shape is BeveledRectangleBorder) {
+      final List<Offset> outline = _beveledOutline(
+        shape.borderRadius.resolve(textDirection).toRRect(rect),
+      );
+      canvas.drawPath(
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addPolygon(_offsetPolygon(outline, side.strokeOutset), true)
+          ..addPolygon(_offsetPolygon(outline, -side.strokeInset), true),
+        Paint()..color = color,
+      );
+      return;
+    }
     shape
         .copyWith(side: side.copyWith(color: color))
         .paint(canvas, rect, textDirection: textDirection);
+  }
+
+  /// The corners of the outline of a [BeveledRectangleBorder] around [rrect],
+  /// clockwise from the top of the left side, as the border computes them.
+  /// Corners that coincide are only listed once.
+  static List<Offset> _beveledOutline(RRect rrect) {
+    final Offset c = rrect.center;
+    double r(double radius) => math.max(0.0, radius);
+    final List<Offset> corners = <Offset>[
+      Offset(rrect.left, math.min(c.dy, rrect.top + r(rrect.tlRadiusY))),
+      Offset(math.min(c.dx, rrect.left + r(rrect.tlRadiusX)), rrect.top),
+      Offset(math.max(c.dx, rrect.right - r(rrect.trRadiusX)), rrect.top),
+      Offset(rrect.right, math.min(c.dy, rrect.top + r(rrect.trRadiusY))),
+      Offset(rrect.right, math.max(c.dy, rrect.bottom - r(rrect.brRadiusY))),
+      Offset(math.max(c.dx, rrect.right - r(rrect.brRadiusX)), rrect.bottom),
+      Offset(math.min(c.dx, rrect.left + r(rrect.blRadiusX)), rrect.bottom),
+      Offset(rrect.left, math.max(c.dy, rrect.bottom - r(rrect.blRadiusY))),
+    ];
+    final List<Offset> distinct = <Offset>[];
+    for (final Offset p in corners) {
+      if (distinct.isEmpty || (p - distinct.last).distanceSquared > 1e-12) {
+        distinct.add(p);
+      }
+    }
+    while (distinct.length > 1 &&
+        (distinct.first - distinct.last).distanceSquared <= 1e-12) {
+      distinct.removeLast();
+    }
+    return distinct;
+  }
+
+  /// Moves every edge of the convex, clockwise polygon [points] outwards by
+  /// [distance], or inwards if it is negative, and returns where the moved
+  /// edges meet.
+  static List<Offset> _offsetPolygon(List<Offset> points, double distance) {
+    final int n = points.length;
+    if (n < 3 || distance == 0) {
+      return points;
+    }
+    // The outward normal of each edge.
+    final List<Offset> normals = <Offset>[
+      for (int i = 0; i < n; i++)
+        () {
+          final Offset e = points[(i + 1) % n] - points[i];
+          return Offset(e.dy, -e.dx) / e.distance;
+        }(),
+    ];
+    return <Offset>[
+      for (int i = 0; i < n; i++)
+        () {
+          final Offset a = normals[(i - 1 + n) % n];
+          final Offset b = normals[i];
+          // The moved edges meet on the bisector of the two normals.
+          final double dot = a.dx * b.dx + a.dy * b.dy;
+          return points[i] + (a + b) * (distance / (1 + dot));
+        }(),
+    ];
   }
 
   /// Where [LinearBorder.paint] puts each edge of [shape] around a box of
