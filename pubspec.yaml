@@ -2,7 +2,7 @@ name: contour_gradient
 description: >-
   A ShapeBorder and InputBorder that paint a gradient along the length of any
   OutlinedBorder shape, for containers, buttons, cards, chips and text fields.
-version: 1.0.0
+version: 1.0.1
 repository: https://github.com/bszarlej/contour_gradient
 issue_tracker: https://github.com/bszarlej/contour_gradient/issues
 topics:
