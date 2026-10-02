@@ -1,3 +1,7 @@
+## 1.0.3
+
+* Added a showcase GIF to the package page on pub.dev.
+
 ## 1.0.2
 
 * **Behavior change:** on closed borders the gradient no longer blends from
