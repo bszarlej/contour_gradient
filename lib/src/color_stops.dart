@@ -16,39 +16,6 @@ List<double> resolveStops(int colorCount, List<double>? stops) {
   );
 }
 
-/// Makes the gradient described by [colors] and [stops] run around a loop,
-/// ending where it starts.
-///
-/// If [stops] is null, the colors are spaced evenly around the loop, so each
-/// takes up the same share of it, and the last blends back into the first.
-/// Otherwise, the gap between the last stop and the first stop, going round
-/// through 1.0, blends from the last color to the first.
-({List<Color> colors, List<double> stops}) wrapColorStops(
-  List<Color> colors,
-  List<double>? stops,
-) {
-  if (stops == null) {
-    final int count = colors.length;
-    return (
-      colors: <Color>[...colors, colors.first],
-      stops: <double>[for (int i = 0; i <= count; i++) i / count],
-    );
-  }
-  final double gap = 1.0 - stops.last + stops.first;
-  if (gap <= 0) {
-    return (colors: colors, stops: stops);
-  }
-  final Color atZero = Color.lerp(
-    colors.last,
-    colors.first,
-    (1.0 - stops.last) / gap,
-  )!;
-  return (
-    colors: <Color>[atZero, ...colors, atZero],
-    stops: <double>[0.0, ...stops, 1.0],
-  );
-}
-
 /// Returns the color of the gradient described by [colors] and [stops] at
 /// position [t] in the range 0.0 to 1.0.
 ///

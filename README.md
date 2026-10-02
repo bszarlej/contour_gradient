@@ -86,6 +86,8 @@ one for some states and the other for the rest.
 `startOffset` moves the gradient along the border, as a fraction of its
 length. Animating it from 0.0 to 1.0 moves the gradient once around, and
 because 0.0 and 1.0 look the same, a repeating animation has no visible jump.
+The example below repeats the first color at the end, so no hard edge travels
+around the border either (see [How colors are placed](#how-colors-are-placed)).
 
 ```dart
 class Spinning extends StatefulWidget {
@@ -117,7 +119,12 @@ class _SpinningState extends State<Spinning>
         height: 120,
         decoration: ShapeDecoration(
           shape: ContourGradientBorder(
-            colors: const [Colors.purple, Colors.blue, Colors.red],
+            colors: const [
+              Colors.purple,
+              Colors.blue,
+              Colors.red,
+              Colors.purple,
+            ],
             startOffset: _controller.value,
             shape: const StarBorder(),
             side: const BorderSide(width: 4),
@@ -138,13 +145,23 @@ with plain `OutlinedBorder`s too, which it treats as a single color.
 - Position 0.0 is the point of the outline nearest the top-left corner of the
   box, and the gradient runs clockwise from there. On rounded rectangles it
   starts halfway around the top-left corner.
-- On a closed border the gradient wraps around: after the last color it blends
-  back into the first. Without `stops`, the colors are spaced evenly, so each
-  gets the same share of the border. There is no need to repeat the first
-  color at the end.
-- With `stops`, each color sits at its stop, and the stretch from the last stop
-  round to the first blends from the last color to the first. Two equal stops
-  make a hard edge:
+- The gradient runs from the first color to the last and does not blend back
+  into the first, so where the end of the gradient meets its start the colors
+  change in a hard edge. To blend back into the first color instead, repeat it
+  at the end:
+
+  ```dart
+  ContourGradientBorder(
+    colors: [Colors.purple, Colors.blue, Colors.red, Colors.purple],
+  )
+  ```
+
+- Without `stops`, the colors are spaced evenly from 0.0 to 1.0. On a closed
+  border the repeated first color joins up with itself across position 0.0,
+  so it gets the same share of the border as each of the others.
+- With `stops`, each color sits at its stop. Before the first stop the border
+  is the first color, and after the last stop it is the last color. Two equal
+  stops make a hard edge:
 
   ```dart
   ContourGradientBorder(
@@ -160,8 +177,9 @@ with plain `OutlinedBorder`s too, which it treats as a single color.
   a loop like a rectangle. Separate lines, such as a top and a bottom edge,
   share the gradient one after the other.
 - On an open line, such as an underline, the gradient runs from the first
-  color to the last without wrapping. To animate `startOffset` on one without
-  a visible jump, make the first and last colors equal.
+  color at one end to the last color at the other. When `startOffset` moves
+  it along, the colors that pass one end come back in at the other, so repeat
+  the first color at the end here too to avoid a hard edge.
 - A single color paints a plain border.
 
 ## Supported shapes

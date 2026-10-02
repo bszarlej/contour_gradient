@@ -1,3 +1,13 @@
+## 1.0.2
+
+* **Behavior change:** on closed borders the gradient no longer blends from
+  the last color back into the first. It runs from the first color to the
+  last, with a hard edge where its end meets its start. To keep the previous
+  look, repeat the first color at the end of `colors`: with evenly spaced
+  colors, `[a, b, c, a]` looks the same as `[a, b, c]` did before. With
+  `stops`, the border is now the first color before the first stop and the
+  last color after the last stop.
+
 ## 1.0.1
 
 * Fixed a `BeveledRectangleBorder` shape's border being twice as wide as its

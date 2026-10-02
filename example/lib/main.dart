@@ -9,6 +9,7 @@ const List<Color> _sunset = <Color>[
   Color(0xFF7F00FF),
   Color(0xFF00C6FF),
   Color(0xFFFF4E50),
+  Color(0xFF7F00FF),
 ];
 
 const List<Color> _aurora = <Color>[
@@ -16,6 +17,7 @@ const List<Color> _aurora = <Color>[
   Color(0xFF0575E6),
   Color(0xFFE100FF),
   Color(0xFFFFC300),
+  Color(0xFF00F260),
 ];
 
 class MainApp extends StatelessWidget {

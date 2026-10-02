@@ -359,56 +359,49 @@ void main() {
 
     Color lerpAt(double t) => Color.lerp(red, blue, t)!;
 
-    // Red and blue with even stops wrap around: red at 0.0, blue at 0.5 and
-    // red again at 1.0.
-    Color wrappedAt(double t) => lerpAt(t <= 0.5 ? 2 * t : 2 - 2 * t);
-
     test('runs clockwise from the top-left corner', () async {
       final Pixels pixels = await render(
         const ContourGradientBorder(colors: <Color>[red, blue], side: side),
         size,
       );
-      expect(pixels.at(50, 5), isColorCloseTo(wrappedAt(0.125)));
-      expect(pixels.at(95, 50), isColorCloseTo(wrappedAt(0.375)));
-      expect(pixels.at(50, 95), isColorCloseTo(wrappedAt(0.625)));
-      expect(pixels.at(5, 50), isColorCloseTo(wrappedAt(0.875)));
+      expect(pixels.at(50, 5), isColorCloseTo(lerpAt(0.125)));
+      expect(pixels.at(95, 50), isColorCloseTo(lerpAt(0.375)));
+      expect(pixels.at(50, 95), isColorCloseTo(lerpAt(0.625)));
+      expect(pixels.at(5, 50), isColorCloseTo(lerpAt(0.875)));
     });
 
-    test('spaces colors evenly and wraps back to the first', () async {
-      // The centre line is 360 long; each of three colors gets 120 of it.
-      const Color green = Color(0xFF00FF00);
+    test('ends in the last color without blending back to the first', () async {
       final Pixels pixels = await render(
-        const ContourGradientBorder(
-          colors: <Color>[red, blue, green],
-          side: side,
-        ),
+        const ContourGradientBorder(colors: <Color>[red, blue], side: side),
         size,
       );
-      expect(pixels.at(65, 5), isColorCloseTo(Color.lerp(red, blue, 0.5)!));
-      expect(pixels.at(95, 35), isColorCloseTo(blue));
-      expect(pixels.at(35, 95), isColorCloseTo(green));
-      expect(pixels.at(5, 65), isColorCloseTo(Color.lerp(green, red, 0.5)!));
+      // The gradient starts halfway around the top-left corner, at 45 degrees.
+      // Just before that point the border is almost blue, just after it
+      // almost red.
+      expect(pixels.at(9, 14), isColorCloseTo(blue, tolerance: 0.1));
+      expect(pixels.at(14, 9), isColorCloseTo(red, tolerance: 0.1));
     });
 
-    test('wrapColorStops blends from the last stop to the first', () {
-      final ({List<Color> colors, List<double> stops}) wrapped = wrapColorStops(
-        const <Color>[red, blue],
-        const <double>[0.2, 0.6],
-      );
-      expect(wrapped.stops, <double>[0.0, 0.2, 0.6, 1.0]);
-      // 0.0 is two thirds of the way through the gap from 0.6 round to 1.2.
-      expect(
-        wrapped.colors.first,
-        isColorCloseTo(Color.lerp(blue, red, 0.4 / 0.6)!, tolerance: 1e-6),
-      );
-      expect(wrapped.colors.last, wrapped.colors.first);
-
-      final ({List<Color> colors, List<double> stops}) full = wrapColorStops(
-        const <Color>[red, blue],
-        const <double>[0.0, 1.0],
-      );
-      expect(full.stops, <double>[0.0, 1.0]);
-    });
+    test(
+      'spaces colors evenly and blends back into a repeated first color',
+      () async {
+        // The centre line is 360 long. The four colors are spaced evenly, so
+        // the gaps between them are 120 long, and red, at both ends, joins up
+        // with itself across the start: each of the three colors gets 120.
+        const Color green = Color(0xFF00FF00);
+        final Pixels pixels = await render(
+          const ContourGradientBorder(
+            colors: <Color>[red, blue, green, red],
+            side: side,
+          ),
+          size,
+        );
+        expect(pixels.at(65, 5), isColorCloseTo(Color.lerp(red, blue, 0.5)!));
+        expect(pixels.at(95, 35), isColorCloseTo(blue));
+        expect(pixels.at(35, 95), isColorCloseTo(green));
+        expect(pixels.at(5, 65), isColorCloseTo(Color.lerp(green, red, 0.5)!));
+      },
+    );
 
     test('is uniform across the width of the border', () async {
       final Pixels pixels = await render(
@@ -428,8 +421,9 @@ void main() {
         ),
         size,
       );
-      expect(pixels.at(50, 5), isColorCloseTo(wrappedAt(0.375)));
-      expect(pixels.at(5, 50), isColorCloseTo(wrappedAt(0.125)));
+      expect(pixels.at(50, 5), isColorCloseTo(lerpAt(0.375)));
+      // 0.875 + 0.25 is past the end, so it comes round to 0.125.
+      expect(pixels.at(5, 50), isColorCloseTo(lerpAt(0.125)));
     });
 
     test('follows the length of a wide box, unlike a sweep', () async {
@@ -444,12 +438,9 @@ void main() {
         const Size(400, 40),
       );
       // Centre line: 390x30, perimeter 840. The middle of the top edge is at
-      // 15 + 180 = 195, t = 0.232, before the first stop, where the gradient
-      // blends from blue at 0.75 round to red at 1.25.
-      expect(
-        pixels.at(200, 5),
-        isColorCloseTo(Color.lerp(blue, red, (195 / 840 + 0.25) * 2)!),
-      );
+      // 15 + 180 = 195, t = 0.232, before the first stop, where the border
+      // is still the first color.
+      expect(pixels.at(200, 5), isColorCloseTo(red));
       // The middle of the bottom edge is at 195 + 30 + 390... = 615 of 840.
       expect(
         pixels.at(200, 35),
@@ -682,48 +673,45 @@ void main() {
         mid.shape,
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       );
-      // Sampled at the union of both gradients' stops, once wrapped around:
-      // 0.2 and 0.8 from one, thirds from the other's three even colors.
+      // Sampled at the union of both gradients' stops: 0.2 and 0.8 from one,
+      // halves from the other's three even colors.
       final List<double> midStops = mid.stops!;
-      expect(midStops.length, 6);
+      expect(midStops.length, 5);
       for (final (int i, double stop) in <(int, double)>[
         (0, 0.0),
         (1, 0.2),
-        (2, 1 / 3),
-        (3, 2 / 3),
-        (4, 0.8),
-        (5, 1.0),
+        (2, 0.5),
+        (3, 0.8),
+        (4, 1.0),
       ]) {
         expect(midStops[i], closeTo(stop, 1e-9));
       }
 
       final ContourGradientBorder start =
           ShapeBorder.lerp(border, other, 0.0)! as ContourGradientBorder;
-      final ({List<Color> colors, List<double> stops}) wrapped = wrapColorStops(
-        border.colors,
-        border.stops,
-      );
       final List<double> stops = start.stops!;
       for (int i = 0; i < stops.length; i++) {
         expect(
           start.colors[i],
           isColorCloseTo(
-            colorAt(wrapped.colors, wrapped.stops, stops[i]),
+            colorAt(border.colors, border.stops!, stops[i]),
             tolerance: 1e-6,
           ),
         );
       }
     });
 
-    test('lerp keeps evenly spaced colors wrapping around', () {
+    test('lerp keeps evenly spaced colors evenly spaced', () {
       // Buttons and chips animate every change to their shape, so they paint
-      // lerped borders; these must still end in the color they start with.
+      // lerped borders; these must look like the borders they come from, and
+      // a repeated first color must still blend back into itself.
       const ContourGradientBorder even = ContourGradientBorder(
-        colors: <Color>[red, blue, Color(0xFF00FF00)],
+        colors: <Color>[red, blue, Color(0xFF00FF00), red],
       );
       final ContourGradientBorder mid =
           ShapeBorder.lerp(even, even.copyWith(startOffset: 0.5), 0.5)!
               as ContourGradientBorder;
+      expect(mid.colors, even.colors);
       expect(mid.colors.last, mid.colors.first);
       expect(mid.stops!.first, 0.0);
       expect(mid.stops!.last, 1.0);
@@ -867,7 +855,7 @@ void main() {
     test('leaves the label gap empty and paints the gradient', () async {
       final Pixels pixels = await renderInput(
         const ContourGradientInputBorder(
-          colors: <Color>[red, blue],
+          colors: <Color>[red, blue, red],
           borderSide: BorderSide(width: 2),
         ),
         gapExtent: 40,
@@ -875,7 +863,7 @@ void main() {
       // The gap runs from x = 8 to 8 + 40 + 8 = 56 along the top.
       expect(pixels.at(30, 0.5).a, 0.0);
       expect(pixels.at(100, 0.5).a, 1.0);
-      // Red and blue with even stops: blue is halfway round, at the
+      // Red, blue and red with even stops: blue is halfway round, at the
       // bottom-right corner, and the top is not blue.
       expect(pixels.at(190, 55), isColorCloseTo(blue, tolerance: 0.15));
       expect(pixels.at(100, 0.5), isNot(isColorCloseTo(blue, tolerance: 0.15)));

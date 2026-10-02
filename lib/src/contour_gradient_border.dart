@@ -68,22 +68,25 @@ class ContourGradientBorder extends OutlinedBorder {
 
   /// Positions of [colors] along the border, as fractions of its length.
   ///
-  /// On a closed border, the gradient wraps around: after the last color it
-  /// blends back into the first, ending where it started. If [stops] is null,
-  /// the colors are spaced evenly around the border, so each takes up the same
-  /// share of it; there is no need to repeat the first color at the end. If
-  /// [stops] is given, the stretch between the last stop and the first one,
-  /// going round through 1.0, blends from the last color to the first.
+  /// If [stops] is null, the colors are spaced evenly from 0.0 to 1.0. If
+  /// [stops] is given, the border is the first color before the first stop
+  /// and the last color after the last stop.
   ///
-  /// On an open border, such as some [LinearBorder]s, the gradient runs from
-  /// the first color to the last without wrapping.
+  /// The gradient does not blend from the last color back into the first, so
+  /// where its end meets its start, at 0.0 on a closed border, the colors
+  /// change in a hard edge. To blend back instead, repeat the first color at
+  /// the end of [colors]. With evenly spaced colors on a closed border, the
+  /// repeated color joins up with itself across 0.0, so it takes up the same
+  /// share of the border as each of the others.
   final List<double>? stops;
 
   /// How far the gradient is moved clockwise along the border, as a fraction
   /// of its length.
   ///
   /// The gradient wraps around, so 0.0 and 1.0 look the same. That makes this
-  /// value suitable for an endlessly repeating animation.
+  /// value suitable for an endlessly repeating animation. Repeat the first
+  /// color at the end of [colors] so no hard edge travels along the border;
+  /// see [stops].
   final double startOffset;
 
   /// The shape of the border.
@@ -146,24 +149,11 @@ class ContourGradientBorder extends OutlinedBorder {
     ContourGradientBorder b,
     double t,
   ) {
-    // The result has explicit stops, which would no longer wrap around the
-    // way evenly spaced colors do. So both gradients are wrapped first, as
-    // paint does for closed borders. On an open border, such as some
-    // LinearBorders, the gradient ends in its first color while the border
-    // animates.
-    final ({List<Color> colors, List<double> stops}) from = wrapColorStops(
+    final ({List<Color> colors, List<double> stops}) gradient = lerpColorStops(
       a.colors,
       a.stops,
-    );
-    final ({List<Color> colors, List<double> stops}) to = wrapColorStops(
       b.colors,
       b.stops,
-    );
-    final ({List<Color> colors, List<double> stops}) gradient = lerpColorStops(
-      from.colors,
-      from.stops,
-      to.colors,
-      to.stops,
       t,
     );
     return ContourGradientBorder(
@@ -266,19 +256,14 @@ class ContourGradientBorder extends OutlinedBorder {
     built.vertices.dispose();
   }
 
-  /// Builds the triangles for [strips], with the gradient wrapped around if
-  /// every strip is a closed loop.
+  /// Builds the triangles for [strips], colored by this border's gradient.
   ({ui.Vertices vertices, Rect bounds})? _buildVertices(
     List<ContourStrip> strips,
   ) {
-    final ({List<Color> colors, List<double> stops}) gradient =
-        strips.every((ContourStrip s) => s.closed)
-        ? wrapColorStops(colors, stops)
-        : (colors: colors, stops: resolveStops(colors.length, stops));
     return ContourStrip.buildVertices(
       strips,
-      colors: gradient.colors,
-      stops: gradient.stops,
+      colors: colors,
+      stops: resolveStops(colors.length, stops),
       startOffset: startOffset,
     );
   }
