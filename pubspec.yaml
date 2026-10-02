@@ -11,6 +11,10 @@ topics:
   - ui
   - animation
 
+screenshots:
+  - description: 'A GIF showcasing different gradient borders'
+    path: assets/showcase.gif
+
 environment:
   sdk: ^3.8.0
   flutter: ">=3.32.0"
