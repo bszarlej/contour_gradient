@@ -1,3 +1,11 @@
+## 1.1.0
+
+* Added `withGradient`, an extension on `OutlinedBorder` that paints any
+  shape with a gradient along its border, keeping the shape's own side:
+  `const StadiumBorder(side: BorderSide(width: 2)).withGradient(colors)`. The
+  README and the example now use it. The `ContourGradientBorder` constructor
+  is unchanged, and is still the way to make a `const` border.
+
 ## 1.0.3
 
 * Added a showcase GIF to the package page on pub.dev.

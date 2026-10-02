@@ -46,13 +46,10 @@ class ExamplePage extends StatelessWidget {
       appBar: AppBar(title: const Text('Contour Gradient')),
       floatingActionButton: FloatingActionButton(
         onPressed: () {},
-        shape: const ContourGradientBorder(
-          colors: _aurora,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(16)),
-          ),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
           side: BorderSide(width: 2),
-        ),
+        ).withGradient(_aurora),
         child: const Icon(Icons.add),
       ),
       body: ListView(
@@ -158,13 +155,9 @@ class _ShapeTile extends StatelessWidget {
           width: width,
           height: height,
           decoration: ShapeDecoration(
-            shape: ContourGradientBorder(
-              colors: colors,
-              stops: stops,
-              startOffset: startOffset,
-              shape: shape,
-              side: const BorderSide(width: 4),
-            ),
+            shape: shape
+                .copyWith(side: const BorderSide(width: 4))
+                .withGradient(colors, stops: stops, startOffset: startOffset),
           ),
         ),
         const SizedBox(height: 8),
@@ -268,10 +261,7 @@ class _Buttons extends StatelessWidget {
       children: <Widget>[
         OutlinedButton(
           style: OutlinedButton.styleFrom(
-            shape: const ContourGradientBorder(
-              colors: _sunset,
-              shape: StadiumBorder(),
-            ),
+            shape: const StadiumBorder().withGradient(_sunset),
             side: const BorderSide(width: 2),
           ),
           onPressed: () {},
@@ -279,12 +269,9 @@ class _Buttons extends StatelessWidget {
         ),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
-            shape: const ContourGradientBorder(
-              colors: _aurora,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(8)),
-              ),
-            ),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+            ).withGradient(_aurora),
             side: const BorderSide(width: 2),
           ),
           onPressed: () {},
@@ -293,11 +280,8 @@ class _Buttons extends StatelessWidget {
         ),
         IconButton(
           style: IconButton.styleFrom(
-            shape: const ContourGradientBorder(
-              colors: _aurora,
-              shape: CircleBorder(),
-              side: BorderSide(width: 2),
-            ),
+            shape: const CircleBorder(side: BorderSide(width: 2))
+                .withGradient(_aurora),
           ),
           onPressed: () {},
           icon: const Icon(Icons.favorite),
@@ -315,15 +299,12 @@ class _MaterialWidgets extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Card(
-          shape: ContourGradientBorder(
-            colors: _sunset,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(16)),
-            ),
+        Card(
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16)),
             side: BorderSide(width: 2),
-          ),
-          child: ListTile(
+          ).withGradient(_sunset),
+          child: const ListTile(
             leading: Icon(Icons.gradient),
             title: Text('Card'),
             subtitle: Text('A Card with a gradient border.'),
@@ -339,22 +320,16 @@ class _MaterialWidgets extends StatelessWidget {
                 label: Text(label),
                 // Chips apply their own side to the shape.
                 side: const BorderSide(width: 1.5),
-                shape: const ContourGradientBorder(
-                  colors: _aurora,
-                  shape: StadiumBorder(),
-                ),
+                shape: const StadiumBorder().withGradient(_aurora),
               ),
             ActionChip(
               avatar: const Icon(Icons.bolt, size: 18),
               label: const Text('ActionChip'),
               onPressed: () {},
               side: const BorderSide(width: 1.5),
-              shape: const ContourGradientBorder(
-                colors: _sunset,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8)),
-                ),
-              ),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+              ).withGradient(_sunset),
             ),
           ],
         ),
@@ -450,10 +425,9 @@ class _RotatingBordersState extends State<_RotatingBorders>
             ),
             OutlinedButton(
               style: OutlinedButton.styleFrom(
-                shape: ContourGradientBorder(
-                  colors: _sunset,
+                shape: const StadiumBorder().withGradient(
+                  _sunset,
                   startOffset: offset,
-                  shape: const StadiumBorder(),
                 ),
                 side: const BorderSide(width: 2),
               ),
@@ -475,6 +449,7 @@ class _MorphingBorder extends StatefulWidget {
 }
 
 class _MorphingBorderState extends State<_MorphingBorder> {
+  // The constructor does the same as withGradient, and can be const.
   static const List<ContourGradientBorder> _borders = <ContourGradientBorder>[
     ContourGradientBorder(
       colors: _sunset,

@@ -915,6 +915,71 @@ void main() {
     });
   });
 
+  group('withGradient', () {
+    test('keeps the shape and its side', () {
+      const RoundedRectangleBorder shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(8)),
+        side: BorderSide(width: 3),
+      );
+      final ContourGradientBorder border = shape.withGradient(
+        <Color>[red, blue],
+        stops: <double>[0.2, 0.8],
+        startOffset: 0.1,
+      );
+      expect(border.shape, shape);
+      expect(border.side, shape.side);
+      expect(border.colors, <Color>[red, blue]);
+      expect(border.stops, <double>[0.2, 0.8]);
+      expect(border.startOffset, 0.1);
+    });
+
+    test('paints like the constructor', () async {
+      const Size size = Size(100, 60);
+      final Pixels extension = await render(
+        const StarBorder(
+          side: BorderSide(width: 4),
+        ).withGradient(<Color>[red, blue, red]),
+        size,
+      );
+      final Pixels constructor = await render(
+        const ContourGradientBorder(
+          colors: <Color>[red, blue, red],
+          shape: StarBorder(),
+          side: BorderSide(width: 4),
+        ),
+        size,
+      );
+      expect(
+        extension.data.buffer.asUint8List(),
+        constructor.data.buffer.asUint8List(),
+      );
+    });
+
+    testWidgets('lets a button apply its side', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                shape: const StadiumBorder().withGradient(<Color>[red, blue]),
+                side: const BorderSide(width: 3),
+              ),
+              onPressed: () {},
+              child: const Text('Button'),
+            ),
+          ),
+        ),
+      );
+      final Material material = tester.widget<Material>(
+        find.descendant(
+          of: find.byType(OutlinedButton),
+          matching: find.byType(Material),
+        ),
+      );
+      expect((material.shape! as ContourGradientBorder).side.width, 3);
+    });
+  });
+
   group('in widgets', () {
     testWidgets('works as a button shape', (WidgetTester tester) async {
       await tester.pumpWidget(

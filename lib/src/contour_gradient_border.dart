@@ -27,7 +27,21 @@ import 'contour_strip.dart';
 /// moves the gradient once around the border.
 ///
 /// Because this is itself an [OutlinedBorder], it can be used anywhere
-/// Flutter accepts a shape:
+/// Flutter accepts a shape. The easiest way to make one is to call
+/// [ContourGradientShape.withGradient] on a shape, which keeps the shape's
+/// own side:
+///
+/// ```dart
+/// Container(
+///   decoration: ShapeDecoration(
+///     shape: const StadiumBorder(
+///       side: BorderSide(width: 2),
+///     ).withGradient([Colors.purple, Colors.orange]),
+///   ),
+/// )
+/// ```
+///
+/// The constructor does the same, and can be `const`:
 ///
 /// ```dart
 /// Container(
@@ -733,5 +747,42 @@ class ContourGradientBorder extends OutlinedBorder {
     return '${objectRuntimeType(this, 'ContourGradientBorder')}'
         '($side, $shape, colors: $colors, stops: $stops, '
         'startOffset: $startOffset)';
+  }
+}
+
+/// Paints any [OutlinedBorder] with a gradient that runs along the border.
+extension ContourGradientShape on OutlinedBorder {
+  /// Returns a [ContourGradientBorder] shaped like this border, painted with
+  /// [colors] along its length.
+  ///
+  /// The border keeps its own [OutlinedBorder.side], whose color is replaced
+  /// by the gradient. Like any Flutter shape, it paints nothing unless it has
+  /// a side, or the widget it is given to applies one, as `OutlinedButton`
+  /// and `Chip` do.
+  ///
+  /// ```dart
+  /// Card(
+  ///   shape: const RoundedRectangleBorder(
+  ///     borderRadius: BorderRadius.all(Radius.circular(16)),
+  ///     side: BorderSide(width: 2),
+  ///   ).withGradient([Colors.purple, Colors.orange]),
+  /// )
+  /// ```
+  ///
+  /// See [ContourGradientBorder.colors], [ContourGradientBorder.stops] and
+  /// [ContourGradientBorder.startOffset]. Use the [ContourGradientBorder]
+  /// constructor instead where the border must be `const`.
+  ContourGradientBorder withGradient(
+    List<Color> colors, {
+    List<double>? stops,
+    double startOffset = 0.0,
+  }) {
+    return ContourGradientBorder(
+      colors: colors,
+      stops: stops,
+      startOffset: startOffset,
+      shape: this,
+      side: side,
+    );
   }
 }

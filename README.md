@@ -13,23 +13,38 @@ whatever the shape.
 
 ## Usage
 
-`ContourGradientBorder` is an `OutlinedBorder`, so it works anywhere Flutter
-accepts a shape. The outline comes from `shape`, and the width and alignment
-come from `side`.
+Write the shape as you normally would, then call `withGradient` on it. The
+border keeps the shape's outline and `side`, and the gradient replaces the
+side's color:
 
 ```dart
 Container(
   width: 200,
   height: 80,
-  decoration: const ShapeDecoration(
-    shape: ContourGradientBorder(
-      colors: [Colors.purple, Colors.blue, Colors.red],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(16)),
-      ),
+  decoration: ShapeDecoration(
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(16)),
       side: BorderSide(width: 3),
-    ),
+    ).withGradient([Colors.purple, Colors.blue, Colors.red]),
   ),
+)
+```
+
+`withGradient` returns a `ContourGradientBorder`, which is an
+`OutlinedBorder`, so it works anywhere Flutter accepts a shape. Like any
+Flutter shape, it paints nothing without a `side`.
+
+Where the border must be `const`, use the `ContourGradientBorder` constructor
+instead. It takes the outline from `shape` and the width and alignment from
+its own `side`, and ignores the side of `shape`:
+
+```dart
+const ContourGradientBorder(
+  colors: [Colors.purple, Colors.blue, Colors.red],
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(16)),
+  ),
+  side: BorderSide(width: 3),
 )
 ```
 
@@ -41,9 +56,8 @@ width there:
 ```dart
 OutlinedButton(
   style: OutlinedButton.styleFrom(
-    shape: const ContourGradientBorder(
-      colors: [Colors.purple, Colors.blue, Colors.red],
-      shape: StadiumBorder(),
+    shape: const StadiumBorder().withGradient(
+      [Colors.purple, Colors.blue, Colors.red],
     ),
     side: const BorderSide(width: 2),
   ),
@@ -52,14 +66,14 @@ OutlinedButton(
 )
 ```
 
-Other buttons, `Card` and `FloatingActionButton` use the border's own `side`.
+Other buttons, `Card` and `FloatingActionButton` use the shape's own `side`.
 
 ### Text fields
 
-`InputDecoration` takes an `InputBorder`, so text fields use
-`ContourGradientInputBorder`. It takes the same `colors`, `stops`,
-`startOffset` and `shape`, and leaves a gap in the top of the border for a
-floating label, like `OutlineInputBorder`:
+`InputDecoration` takes an `InputBorder`, which `withGradient` does not
+return, so text fields use `ContourGradientInputBorder`. It takes the same
+`colors`, `stops`, `startOffset` and `shape`, and leaves a gap in the top of
+the border for a floating label, like `OutlineInputBorder`:
 
 ```dart
 TextField(
@@ -118,16 +132,9 @@ class _SpinningState extends State<Spinning>
         width: 120,
         height: 120,
         decoration: ShapeDecoration(
-          shape: ContourGradientBorder(
-            colors: const [
-              Colors.purple,
-              Colors.blue,
-              Colors.red,
-              Colors.purple,
-            ],
+          shape: const StarBorder(side: BorderSide(width: 4)).withGradient(
+            const [Colors.purple, Colors.blue, Colors.red, Colors.purple],
             startOffset: _controller.value,
-            shape: const StarBorder(),
-            side: const BorderSide(width: 4),
           ),
         ),
       ),
@@ -151,9 +158,7 @@ with plain `OutlinedBorder`s too, which it treats as a single color.
   at the end:
 
   ```dart
-  ContourGradientBorder(
-    colors: [Colors.purple, Colors.blue, Colors.red, Colors.purple],
-  )
+  shape.withGradient([Colors.purple, Colors.blue, Colors.red, Colors.purple])
   ```
 
 - Without `stops`, the colors are spaced evenly from 0.0 to 1.0. On a closed
@@ -164,8 +169,8 @@ with plain `OutlinedBorder`s too, which it treats as a single color.
   stops make a hard edge:
 
   ```dart
-  ContourGradientBorder(
-    colors: [Colors.red, Colors.red, Colors.blue, Colors.blue],
+  shape.withGradient(
+    [Colors.red, Colors.red, Colors.blue, Colors.blue],
     stops: [0.0, 0.5, 0.5, 1.0],
   )
   ```
