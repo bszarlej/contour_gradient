@@ -92,3 +92,42 @@ Frame timings, ms:
 | mixed_24  |    598 |       1.1 |       1.4 |        5.7 |        6.7 |
 | mixed_96  |    423 |       5.7 |      13.3 |       10.4 |       12.8 |
 | mixed_240 |    289 |       9.4 |      14.9 |       17.2 |       17.9 |
+
+## Rounded rectangles clipped, not masked (unreleased)
+
+Same device and conditions. Rounded rectangles, stadiums and circles are now
+clipped to their area instead of masked in two layers; other shapes still use
+the layers.
+
+`paint()` cost, µs per border:
+
+| Rounded rectangle | Stadium | Beveled | Superellipse | Oval | Star |
+| ----------------: | ------: | ------: | -----------: | ---: | ---: |
+|                 6 |       4 |      13 |           14 |   10 |   14 |
+
+Frame timings, ms:
+
+| Scenario  | Frames | Build avg | Build p99 | Raster avg | Raster p99 |
+| --------- | -----: | --------: | --------: | ---------: | ---------: |
+| rrect_24  |    611 |       1.6 |       2.3 |        2.7 |        4.2 |
+| rrect_96  |    585 |       3.6 |      10.2 |        4.5 |        5.4 |
+| rrect_240 |    562 |       5.2 |      11.5 |        5.6 |        6.3 |
+| star_24   |    598 |       1.1 |       1.4 |        5.8 |        6.5 |
+| star_96   |    537 |       5.0 |       9.7 |        8.6 |        9.2 |
+| star_240  |    245 |      10.0 |      15.9 |       20.2 |       22.9 |
+| mixed_24  |    611 |       1.1 |       1.5 |        5.4 |        8.5 |
+| mixed_96  |    575 |       4.8 |      10.2 |        6.4 |        7.0 |
+| mixed_240 |    325 |       8.4 |      14.1 |       13.5 |       14.2 |
+
+Graphics memory with 240 animated borders on screen, from the `Graphics` line
+of `adb shell dumpsys meminfo com.example.contour_gradient_example` while
+`lib/benchmark.dart` runs; the app drawing no borders at all uses 142 MB:
+
+| Shape             | Masked in two layers | Clipped |
+| ----------------- | -------------------: | ------: |
+| Rounded rectangle |             1,561 MB |  151 MB |
+| Stadium           |                    — |  151 MB |
+| Star              |             1,756 MB |       — |
+
+Each layer costs a few megabytes per border on Impeller, far more than the
+border's pixels, so layers, not geometry, dominate memory.

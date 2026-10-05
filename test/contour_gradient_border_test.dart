@@ -224,6 +224,40 @@ void main() {
         ContourGradientBorder(colors: colors, shape: shape, side: side),
         size,
       );
+      // Borders whose outline is a rounded rectangle are clipped to their
+      // area rather than masked by the shape's own border. Where the engine
+      // flattens the curves of the clip, its edge can lie a fraction of a
+      // pixel from the shape's, so a pixel is compared with the range of
+      // coverages of the expected pixels around it. That the clip leaves no
+      // pixel out is tested against the area of the border instead.
+      final bool clipped =
+          shape.runtimeType == RoundedRectangleBorder ||
+          shape.runtimeType == StadiumBorder ||
+          (shape.runtimeType == CircleBorder &&
+              (shape as CircleBorder).eccentricity == 0);
+      int distanceFromNeighbours(int i, int alpha) {
+        final int x = i % expected.width;
+        final int y = i ~/ expected.width;
+        int low = 255;
+        int high = 0;
+        for (
+          int ny = math.max(0, y - 1);
+          ny <= math.min(expected.height - 1, y + 1);
+          ny++
+        ) {
+          for (
+            int nx = math.max(0, x - 1);
+            nx <= math.min(expected.width - 1, x + 1);
+            nx++
+          ) {
+            final int neighbour = expected.alphaAt(ny * expected.width + nx);
+            low = math.min(low, neighbour);
+            high = math.max(high, neighbour);
+          }
+        }
+        return math.max(0, math.max(low - alpha, alpha - high));
+      }
+
       int maxDiff = 0;
       for (int i = 0; i < expected.width * expected.height; i++) {
         final int e = expected.alphaAt(i);
@@ -235,7 +269,7 @@ void main() {
         if (e > 0 && e < 255 && a > 0 && a < 255) {
           continue;
         }
-        final int diff = (e - a).abs();
+        final int diff = clipped ? distanceFromNeighbours(i, a) : (e - a).abs();
         if (diff > maxDiff) {
           maxDiff = diff;
         }
@@ -266,6 +300,72 @@ void main() {
         }
       }
     }
+
+    test('a rounded border covers exactly its area', () async {
+      double area(RRect r) =>
+          r.width * r.height -
+          (1 - math.pi / 4) *
+              (r.tlRadiusX * r.tlRadiusY +
+                  r.trRadiusX * r.trRadiusY +
+                  r.brRadiusX * r.brRadiusY +
+                  r.blRadiusX * r.blRadiusY);
+      const Size size = Size(140, 90);
+      final Rect rect = Offset.zero & size;
+      final Map<String, (OutlinedBorder, RRect)> shapes =
+          <String, (OutlinedBorder, RRect)>{
+            'rounded rectangle': (
+              const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(16)),
+              ),
+              RRect.fromRectAndRadius(rect, const Radius.circular(16)),
+            ),
+            'stadium': (
+              const StadiumBorder(),
+              RRect.fromRectAndRadius(rect, const Radius.circular(45)),
+            ),
+            'circle': (
+              const CircleBorder(),
+              RRect.fromRectAndRadius(
+                Rect.fromCircle(center: rect.center, radius: 45),
+                const Radius.circular(45),
+              ),
+            ),
+          };
+      for (final MapEntry<String, (OutlinedBorder, RRect)> shape
+          in shapes.entries) {
+        for (final double align in aligns.values) {
+          for (final double width in widths) {
+            final BorderSide side = BorderSide(
+              width: width,
+              strokeAlign: align,
+            );
+            final (OutlinedBorder border, RRect outline) = shape.value;
+            final Pixels pixels = await render(
+              ContourGradientBorder(
+                colors: const <Color>[red, red],
+                shape: border,
+                side: side,
+              ),
+              size,
+            );
+            double covered = 0;
+            for (int i = 0; i < pixels.width * pixels.height; i++) {
+              covered += pixels.alphaAt(i) / 255;
+            }
+            final double expected =
+                area(outline.inflate(side.strokeOutset)) -
+                area(outline.deflate(side.strokeInset));
+            // The clip's anti-aliased edges are off by a few hundredths of a
+            // pixel, which adds up to a few percent on a thin border.
+            expect(
+              covered,
+              closeTo(expected, expected * 0.04),
+              reason: '${shape.key}, width $width, strokeAlign $align',
+            );
+          }
+        }
+      }
+    });
 
     test('width that fills the box', () async {
       expect(
@@ -332,6 +432,10 @@ void main() {
       () async {
         const Color faded = Color(0x80FF0000);
         for (final OutlinedBorder shape in <OutlinedBorder>[
+          const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(20)),
+          ),
+          const CircleBorder(),
           const StarBorder(innerRadiusRatio: 0.3),
           const BeveledRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(20)),

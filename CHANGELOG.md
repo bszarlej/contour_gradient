@@ -6,6 +6,13 @@
   being worked out for every vertex. On a Galaxy S24, painting an animated
   star border went from about 480 µs to 14 µs of UI thread time, and 240
   animated stars went from 13 to 44 frames per second.
+* Borders shaped like a rounded rectangle (`RoundedRectangleBorder`,
+  `StadiumBorder` and a circular `CircleBorder`) are now clipped to their
+  area instead of masked in two layers. Layers take a lot of memory on
+  Impeller: with 240 animated rounded rectangles on screen, a Galaxy S24 used
+  1.5 GB of graphics memory, and now uses 151 MB, while raster time per frame
+  went from 11.9 to 5.6 ms. Their anti-aliased edges can differ from the
+  shape's own by a fraction of a pixel.
 * Borders now take the device pixel ratio into account when they sample
   their outline. They used to sample it as if it were 1, so on most phones
   the gradient followed curves more coarsely than intended.

@@ -17,10 +17,11 @@ import 'contour_strip.dart';
 /// The band does not depend on the gradient, so it can be built once and
 /// painted with any colors and start offset; see [shader].
 class ContourBand {
-  ContourBand._(this.vertices, this.bounds, this.length);
+  ContourBand._(this.vertices, this.bounds, this.length, this.area);
 
-  /// Builds the band covering [strips]. Returns null if they have no length.
-  static ContourBand? fromStrips(List<ContourStrip> strips) {
+  /// Builds the band covering [strips], with the given [area]. Returns null if
+  /// the strips have no length.
+  static ContourBand? fromStrips(List<ContourStrip> strips, {Path? area}) {
     int quads = 0;
     double length = 0;
     for (final ContourStrip strip in strips) {
@@ -77,6 +78,7 @@ class ContourBand {
       ),
       Rect.fromLTRB(left, top, right, bottom),
       length,
+      area,
     );
   }
 
@@ -89,6 +91,10 @@ class ContourBand {
 
   /// The total length of the strips the band covers.
   final double length;
+
+  /// The area of the border the band is painted on, if it can be clipped to
+  /// it.
+  final Path? area;
 
   /// A shader that colors the band with the gradient described by [colors]
   /// and [stops], running along it once and moved along it by [startOffset],

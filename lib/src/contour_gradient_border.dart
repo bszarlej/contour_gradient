@@ -66,10 +66,12 @@ import 'contour_strip.dart';
 ///
 /// Borders whose outline is a rounded rectangle ([RoundedRectangleBorder],
 /// [StadiumBorder] and a circular [CircleBorder]) get geometry that follows
-/// the outline exactly, which is quick to build. Other shapes get geometry
-/// along their path, which takes longer to build, and is then masked by the
-/// shape's own border. Either way, painting costs two [Canvas.saveLayer]
-/// calls.
+/// the outline exactly, which is quick to build, and are clipped to their
+/// area. Other shapes get geometry along their path, which takes longer to
+/// build, and is then masked by the shape's own border, which costs two
+/// [Canvas.saveLayer] calls. Layers take a lot of memory, so many such
+/// borders on screen at once, as in a long list of animated stars, use far
+/// more of it than rounded rectangles do.
 class ContourGradientBorder extends OutlinedBorder {
   /// Creates a border shaped like [shape], painted with a gradient along its
   /// length.
@@ -273,29 +275,41 @@ class ContourGradientBorder extends OutlinedBorder {
         textDirection,
         bandScale,
       ),
-      () => ContourBand.fromStrips(
-        outline != null
-            ? <ContourStrip>[_rrectStrip(outline.shift(-rect.topLeft), margin)]
-            : _stripsAlongShape(
+      () => outline != null
+          ? ContourBand.fromStrips(<ContourStrip>[
+              _rrectStrip(outline.shift(-rect.topLeft), margin),
+            ], area: _rrectArea(outline.shift(-rect.topLeft)))
+          : ContourBand.fromStrips(
+              _stripsAlongShape(
                 Offset.zero & rect.size,
                 textDirection,
                 margin,
                 bandScale,
               ),
-      ),
+            ),
     );
     if (band == null) {
       return;
     }
-    // The band between two rounded rectangles has no gaps to fill.
-    _paintMasked(
-      canvas,
-      rect,
-      textDirection,
-      band,
-      margin,
-      fillGaps: outline == null ? 1 / scale : 0,
-    );
+    final Paint paint = Paint()
+      ..shader = band.shader(
+        colors,
+        resolveStops(colors.length, stops),
+        startOffset,
+      );
+    if (band.area != null) {
+      _paintClipped(canvas, rect, band, paint);
+    } else {
+      _paintMasked(
+        canvas,
+        rect,
+        textDirection,
+        band,
+        paint,
+        margin,
+        fillGaps: 1 / scale,
+      );
+    }
   }
 
   /// [scale] rounded down to a quarter of an octave, so that the band of a
@@ -340,11 +354,27 @@ class ContourGradientBorder extends OutlinedBorder {
   /// Unlike [ContourStrip.alongPath], it follows the border's exact outline,
   /// so its corners are colored along radial lines.
   ContourStrip _rrectStrip(RRect outline, double margin) {
-    final RRect outer = outline.inflate(side.strokeOutset).scaleRadii();
-    final RRect inner = _deflateClamped(outline, side.strokeInset);
+    final (RRect outer, RRect inner) = _rrectEdges(outline);
     return ContourStrip.rrectRing(
       outer.inflate(margin).scaleRadii(),
       _deflateClamped(inner, margin),
+    );
+  }
+
+  /// The area the border around [outline] covers.
+  Path _rrectArea(RRect outline) {
+    final (RRect outer, RRect inner) = _rrectEdges(outline);
+    return Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRRect(outer)
+      ..addRRect(inner);
+  }
+
+  /// The outer and inner edges of the border around [outline].
+  (RRect, RRect) _rrectEdges(RRect outline) {
+    return (
+      outline.inflate(side.strokeOutset).scaleRadii(),
+      _deflateClamped(outline, side.strokeInset),
     );
   }
 
@@ -381,17 +411,35 @@ class ContourGradientBorder extends OutlinedBorder {
     );
   }
 
-  /// Paints [band], built around a box at the origin, colored by this
-  /// border's gradient and masked by the shape's own border around [rect], so
-  /// the result covers exactly the pixels the shape would paint.
+  /// Paints [band], built around a box at the origin, with [paint], clipped to
+  /// the band's area around [rect].
   ///
-  /// If [fillGaps] is positive, copies of the band shifted by that much are
-  /// painted underneath it.
+  /// Unlike [_paintMasked], this needs no layers, which take a lot of memory:
+  /// on Impeller, several megabytes for each border. It only suits bands that
+  /// neither overlap themselves nor need their gaps filled: each extra copy
+  /// of a pixel would add to the coverage of the clip's anti-aliased edge.
+  void _paintClipped(Canvas canvas, Rect rect, ContourBand band, Paint paint) {
+    // The band has no vertex colors; BlendMode.src makes sure only the
+    // shader is used.
+    canvas
+      ..save()
+      ..translate(rect.left, rect.top)
+      ..clipPath(band.area!)
+      ..drawVertices(band.vertices, BlendMode.src, paint)
+      ..restore();
+  }
+
+  /// Paints [band], built around a box at the origin, with [paint], masked by
+  /// the shape's own border around [rect], so the result covers exactly the
+  /// pixels the shape would paint.
+  ///
+  /// Copies of the band shifted by [fillGaps] are painted underneath it.
   void _paintMasked(
     Canvas canvas,
     Rect rect,
     TextDirection? textDirection,
     ContourBand band,
+    Paint paint,
     double margin, {
     required double fillGaps,
   }) {
@@ -403,13 +451,7 @@ class ContourGradientBorder extends OutlinedBorder {
     // of blending, so translucent colors stay even. The band has no vertex
     // colors; BlendMode.src in drawVertices makes sure only the shader is
     // used.
-    final Paint paint = Paint()
-      ..blendMode = BlendMode.src
-      ..shader = band.shader(
-        colors,
-        resolveStops(colors.length, stops),
-        startOffset,
-      );
+    paint.blendMode = BlendMode.src;
     canvas
       ..saveLayer(bounds, Paint())
       ..save()
@@ -418,19 +460,17 @@ class ContourGradientBorder extends OutlinedBorder {
     // thick border, gaps of a pixel or so can be left between them. Copies
     // shifted by a device pixel underneath fill them with the neighbouring
     // color.
-    if (fillGaps > 0) {
-      for (final Offset offset in <Offset>[
-        Offset(fillGaps, 0),
-        Offset(-fillGaps, 0),
-        Offset(0, fillGaps),
-        Offset(0, -fillGaps),
-      ]) {
-        canvas
-          ..save()
-          ..translate(offset.dx, offset.dy)
-          ..drawVertices(band.vertices, BlendMode.src, paint)
-          ..restore();
-      }
+    for (final Offset offset in <Offset>[
+      Offset(fillGaps, 0),
+      Offset(-fillGaps, 0),
+      Offset(0, fillGaps),
+      Offset(0, -fillGaps),
+    ]) {
+      canvas
+        ..save()
+        ..translate(offset.dx, offset.dy)
+        ..drawVertices(band.vertices, BlendMode.src, paint)
+        ..restore();
     }
     canvas
       ..drawVertices(band.vertices, BlendMode.src, paint)
