@@ -67,3 +67,28 @@ Frame timings, ms:
 | mixed_24  |    299 |      11.9 |      14.4 |        4.4 |        8.4 |
 | mixed_96  |    200 |      20.0 |      23.0 |       15.6 |       17.1 |
 | mixed_240 |    104 |      42.5 |      53.0 |       24.9 |       35.8 |
+
+## Cached geometry, GPU gradient (unreleased)
+
+Same device and conditions as the baseline. Borders now also sample their
+outline at the device pixel ratio, which 1.1.0 missed.
+
+`paint()` cost, µs per border:
+
+| Rounded rectangle | Stadium | Beveled | Superellipse | Oval | Star |
+| ----------------: | ------: | ------: | -----------: | ---: | ---: |
+|                 9 |       7 |      13 |           13 |   10 |   14 |
+
+Frame timings, ms:
+
+| Scenario  | Frames | Build avg | Build p99 | Raster avg | Raster p99 |
+| --------- | -----: | --------: | --------: | ---------: | ---------: |
+| rrect_24  |    598 |       1.0 |       1.5 |        4.8 |        7.4 |
+| rrect_96  |    574 |       4.0 |       8.5 |        6.2 |       12.4 |
+| rrect_240 |    308 |       8.7 |      16.0 |       11.9 |       13.1 |
+| star_24   |    611 |       1.1 |       1.3 |        5.8 |        6.6 |
+| star_96   |    518 |       4.3 |      10.1 |        9.0 |       10.6 |
+| star_240  |    219 |       8.4 |      11.8 |       22.3 |       25.1 |
+| mixed_24  |    598 |       1.1 |       1.4 |        5.7 |        6.7 |
+| mixed_96  |    423 |       5.7 |      13.3 |       10.4 |       12.8 |
+| mixed_240 |    289 |       9.4 |      14.9 |       17.2 |       17.9 |

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import 'color_stops.dart';
+import 'contour_band.dart';
 import 'contour_strip.dart';
 
 /// A border of any [OutlinedBorder] shape, painted with a gradient that runs
@@ -57,10 +58,18 @@ import 'contour_strip.dart';
 ///
 /// ## Performance
 ///
+/// The geometry of a border depends only on its shape, side and size, not on
+/// its gradient. It is built the first time a border of that shape, side and
+/// size is painted, and reused after that, wherever the border is. Changing
+/// [colors], [stops] or [startOffset], as in an animation, only changes how
+/// the geometry is colored, which costs little.
+///
 /// Borders whose outline is a rounded rectangle ([RoundedRectangleBorder],
-/// [StadiumBorder] and a circular [CircleBorder]) are painted directly. Other
-/// shapes paint their own border into an offscreen layer that is used as a
-/// mask for the gradient, which costs two [Canvas.saveLayer] calls.
+/// [StadiumBorder] and a circular [CircleBorder]) get geometry that follows
+/// the outline exactly, which is quick to build. Other shapes get geometry
+/// along their path, which takes longer to build, and is then masked by the
+/// shape's own border. Either way, painting costs two [Canvas.saveLayer]
+/// calls.
 class ContourGradientBorder extends OutlinedBorder {
   /// Creates a border shaped like [shape], painted with a gradient along its
   /// length.
@@ -246,16 +255,36 @@ class ContourGradientBorder extends OutlinedBorder {
     }
 
     final double scale = _scaleOf(canvas);
+    final double bandScale = _roundScaleDown(scale);
     // How far the colored band reaches past the border, so that the border's
     // anti-aliased edge pixels are colored too.
-    final double margin = 1.0 / math.min(1.0, scale);
-
+    final double margin = 1.0 / math.min(1.0, bandScale);
     final RRect? outline = _rrectOutline(rect, textDirection);
-    final List<ContourStrip> strips = outline != null
-        ? <ContourStrip>[_rrectStrip(outline, margin)]
-        : _stripsAlongShape(rect, textDirection, margin, scale);
-    final ({ui.Vertices vertices, Rect bounds})? built = _buildVertices(strips);
-    if (built == null) {
+
+    // The band does not depend on the gradient, so it is built once for each
+    // shape and size, around a box at the origin, and reused while only the
+    // gradient changes, as when startOffset is animated.
+    final ContourBand? band = contourBandCache.get(
+      _BandKey(
+        shape,
+        side.width,
+        side.strokeAlign,
+        rect.size,
+        textDirection,
+        bandScale,
+      ),
+      () => ContourBand.fromStrips(
+        outline != null
+            ? <ContourStrip>[_rrectStrip(outline.shift(-rect.topLeft), margin)]
+            : _stripsAlongShape(
+                Offset.zero & rect.size,
+                textDirection,
+                margin,
+                bandScale,
+              ),
+      ),
+    );
+    if (band == null) {
       return;
     }
     // The band between two rounded rectangles has no gaps to fill.
@@ -263,23 +292,18 @@ class ContourGradientBorder extends OutlinedBorder {
       canvas,
       rect,
       textDirection,
-      built,
+      band,
       margin,
       fillGaps: outline == null ? 1 / scale : 0,
     );
-    built.vertices.dispose();
   }
 
-  /// Builds the triangles for [strips], colored by this border's gradient.
-  ({ui.Vertices vertices, Rect bounds})? _buildVertices(
-    List<ContourStrip> strips,
-  ) {
-    return ContourStrip.buildVertices(
-      strips,
-      colors: colors,
-      stops: resolveStops(colors.length, stops),
-      startOffset: startOffset,
-    );
+  /// [scale] rounded down to a quarter of an octave, so that the band of a
+  /// border whose scale changes a little, as in a zoom transition, is reused.
+  /// Rounding down keeps the band at least as wide as it needs to be.
+  static double _roundScaleDown(double scale) {
+    final double quarters = (math.log(scale) / math.ln2 * 4 + 1e-9).floor() / 4;
+    return math.pow(2, quarters).toDouble();
   }
 
   /// The rounded rectangle the border is drawn around, for shapes whose
@@ -357,7 +381,8 @@ class ContourGradientBorder extends OutlinedBorder {
     );
   }
 
-  /// Paints the colored band [built], masked by the shape's own border, so
+  /// Paints [band], built around a box at the origin, colored by this
+  /// border's gradient and masked by the shape's own border around [rect], so
   /// the result covers exactly the pixels the shape would paint.
   ///
   /// If [fillGaps] is positive, copies of the band shifted by that much are
@@ -366,18 +391,29 @@ class ContourGradientBorder extends OutlinedBorder {
     Canvas canvas,
     Rect rect,
     TextDirection? textDirection,
-    ({ui.Vertices vertices, Rect bounds}) built,
+    ContourBand band,
     double margin, {
     required double fillGaps,
   }) {
     // The layers must have bounds: a layer that masks with BlendMode.dstIn
     // cannot be shrunk to what is drawn in it, so without bounds it covers
     // the whole screen.
-    final Rect bounds = built.bounds.inflate(margin);
+    final Rect bounds = band.bounds.shift(rect.topLeft).inflate(margin);
     // Where the band overlaps itself, at corners, the last quad wins instead
-    // of blending, so translucent colors stay even.
-    final Paint replace = Paint()..blendMode = BlendMode.src;
-    canvas.saveLayer(bounds, Paint());
+    // of blending, so translucent colors stay even. The band has no vertex
+    // colors; BlendMode.src in drawVertices makes sure only the shader is
+    // used.
+    final Paint paint = Paint()
+      ..blendMode = BlendMode.src
+      ..shader = band.shader(
+        colors,
+        resolveStops(colors.length, stops),
+        startOffset,
+      );
+    canvas
+      ..saveLayer(bounds, Paint())
+      ..save()
+      ..translate(rect.left, rect.top);
     // Where the band's pieces meet, as at the centre of a tight curve on a
     // thick border, gaps of a pixel or so can be left between them. Copies
     // shifted by a device pixel underneath fill them with the neighbouring
@@ -392,12 +428,13 @@ class ContourGradientBorder extends OutlinedBorder {
         canvas
           ..save()
           ..translate(offset.dx, offset.dy)
-          ..drawVertices(built.vertices, BlendMode.dst, replace)
+          ..drawVertices(band.vertices, BlendMode.src, paint)
           ..restore();
       }
     }
     canvas
-      ..drawVertices(built.vertices, BlendMode.dst, replace)
+      ..drawVertices(band.vertices, BlendMode.src, paint)
+      ..restore()
       ..saveLayer(bounds, Paint()..blendMode = BlendMode.dstIn);
     _paintOutline(canvas, rect, textDirection, const Color(0xFF000000));
     canvas
@@ -713,11 +750,29 @@ class ContourGradientBorder extends OutlinedBorder {
     ).scaleRadii();
   }
 
-  /// The factor by which the canvas' current transform scales lengths.
+  /// The factor by which lengths on [canvas] are scaled on the screen.
+  ///
+  /// That is the scale of the canvas' current transform times the device
+  /// pixel ratio. The device pixel ratio is not part of the canvas' transform:
+  /// the root layer of the view applies it, above the picture being recorded.
   static double _scaleOf(Canvas canvas) {
     final Float64List m = canvas.getTransform();
-    final double scale = math.sqrt((m[0] * m[5] - m[1] * m[4]).abs());
+    final double scale =
+        math.sqrt((m[0] * m[5] - m[1] * m[4]).abs()) * _devicePixelRatio;
     return scale > 0 && scale.isFinite ? scale : 1.0;
+  }
+
+  /// The device pixel ratio of the views the border may be painted in.
+  ///
+  /// A border cannot tell which view it is painted in, so if there are
+  /// several, this is the largest ratio, which is fine enough for all of
+  /// them.
+  static double get _devicePixelRatio {
+    double ratio = 0;
+    for (final ui.FlutterView view in ui.PlatformDispatcher.instance.views) {
+      ratio = math.max(ratio, view.devicePixelRatio);
+    }
+    return ratio > 0 ? ratio : 1.0;
   }
 
   @override
@@ -748,6 +803,41 @@ class ContourGradientBorder extends OutlinedBorder {
         '($side, $shape, colors: $colors, stops: $stops, '
         'startOffset: $startOffset)';
   }
+}
+
+/// Everything the band of a [ContourGradientBorder] depends on.
+@immutable
+class _BandKey {
+  const _BandKey(
+    this.shape,
+    this.width,
+    this.strokeAlign,
+    this.size,
+    this.textDirection,
+    this.scale,
+  );
+
+  final OutlinedBorder shape;
+  final double width;
+  final double strokeAlign;
+  final Size size;
+  final TextDirection? textDirection;
+  final double scale;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _BandKey &&
+        other.width == width &&
+        other.strokeAlign == strokeAlign &&
+        other.size == size &&
+        other.textDirection == textDirection &&
+        other.scale == scale &&
+        other.shape == shape;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(shape, width, strokeAlign, size, textDirection, scale);
 }
 
 /// Paints any [OutlinedBorder] with a gradient that runs along the border.

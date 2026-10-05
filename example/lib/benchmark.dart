@@ -5,6 +5,10 @@
 //
 //     flutter run --profile -t lib/benchmark.dart
 //
+// To start with a given shape and number of borders, add for example
+// --dart-define=SHAPE=star --dart-define=COUNT=240. SHAPE is the name of a
+// BenchmarkShape.
+//
 // For automated runs that write frame timings to build/benchmark, see
 // integration_test/benchmark_test.dart.
 
@@ -16,7 +20,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 void main() {
-  runApp(const BenchmarkApp());
+  const String shape = String.fromEnvironment('SHAPE');
+  runApp(
+    BenchmarkApp(
+      shapes: shape.isEmpty
+          ? null
+          : <BenchmarkShape>[BenchmarkShape.values.byName(shape)],
+      count: const int.fromEnvironment('COUNT', defaultValue: 96),
+    ),
+  );
 }
 
 const List<Color> _colors = <Color>[

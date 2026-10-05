@@ -1,3 +1,15 @@
+## Unreleased
+
+* Animating a border is much cheaper. A border's geometry is now built once
+  for each shape, side and size, and reused while only its colors, stops or
+  `startOffset` change, and the gradient is applied by the GPU instead of
+  being worked out for every vertex. On a Galaxy S24, painting an animated
+  star border went from about 480 µs to 14 µs of UI thread time, and 240
+  animated stars went from 13 to 44 frames per second.
+* Borders now take the device pixel ratio into account when they sample
+  their outline. They used to sample it as if it were 1, so on most phones
+  the gradient followed curves more coarsely than intended.
+
 ## 1.1.0
 
 * Added `withGradient`, an extension on `OutlinedBorder` that paints any

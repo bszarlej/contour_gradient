@@ -1,4 +1,6 @@
-// Times each stage of painting a ContourGradientBorder, per shape.
+// Times each stage of painting a ContourGradientBorder, per shape: building
+// its strips and its band, which happens on the first paint of a shape and
+// size, and painting it again with another start offset, as in an animation.
 //
 // Run with:
 //
@@ -13,15 +15,15 @@
 import 'dart:ui' as ui;
 
 import 'package:contour_gradient/contour_gradient.dart';
-import 'package:contour_gradient/src/color_stops.dart';
+import 'package:contour_gradient/src/contour_band.dart';
 import 'package:contour_gradient/src/contour_strip.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The scale of the canvas. In a frame the canvas is usually not scaled,
-/// because the device pixel ratio is applied by the root layer, so the border
-/// sees a scale of 1 whatever the device.
-const double _scale = 1.0;
+/// The device pixel ratio, which the border samples its outline for. As in a
+/// frame, the canvas itself is not scaled: the root layer applies the ratio.
+final double _devicePixelRatio =
+    ui.PlatformDispatcher.instance.implicitView!.devicePixelRatio;
 const double _width = 3.0;
 const List<Color> _colors = <Color>[
   Color(0xFF7F00FF),
@@ -108,23 +110,22 @@ List<ContourStrip> _strips(_Case c) {
   return ContourStrip.alongPath(
     c.shape.getOuterPath(rect.inflate(side.strokeOffset / 2)),
     halfWidth: side.width + margin,
-    step: 2.0 / _scale,
+    step: 2.0 / _devicePixelRatio,
   );
 }
 
 void main() {
   test('paint stages', () {
-    final List<double> stops = resolveStops(_colors.length, null);
     final StringBuffer out = StringBuffer()
       ..writeln()
       ..writeln(
-        'Paint stages at scale $_scale, width $_width, '
+        'Paint stages at device pixel ratio $_devicePixelRatio, width $_width, '
         '${_colors.length} colors (debug mode, µs per call)',
       )
       ..writeln(
         '${'shape'.padRight(18)}${'pairs'.padLeft(7)}'
-        '${'geometry'.padLeft(10)}${'vertices'.padLeft(10)}'
-        '${'paint()'.padLeft(10)}',
+        '${'strips'.padLeft(10)}${'band'.padLeft(10)}'
+        '${'1st paint'.padLeft(11)}${'paint()'.padLeft(10)}',
       );
 
     for (final _Case c in _cases) {
@@ -134,15 +135,10 @@ void main() {
         (int sum, ContourStrip s) => sum + s.outer.length,
       );
 
-      final double geometry = _measure((_) => _strips(c));
+      final double stripsTime = _measure((_) => _strips(c));
 
-      final double vertices = _measure((int i) {
-        ContourStrip.buildVertices(
-          strips,
-          colors: _colors,
-          stops: stops,
-          startOffset: i / 97,
-        )?.vertices.dispose();
+      final double bandTime = _measure((_) {
+        ContourBand.fromStrips(strips)?.dispose();
       });
 
       final ContourGradientBorder border = c.shape
@@ -150,22 +146,30 @@ void main() {
           .withGradient(_colors);
       final Rect rect = Offset.zero & c.size;
       ui.PictureRecorder recorder = ui.PictureRecorder();
-      Canvas canvas = Canvas(recorder)..scale(_scale);
-      final double paint = _measure((int i) {
+      Canvas canvas = Canvas(recorder);
+      double measurePaint({required bool cached}) => _measure((int i) {
         // Start a new recording now and then, so it does not grow forever.
         if (i % 64 == 0) {
           recorder.endRecording().dispose();
           recorder = ui.PictureRecorder();
-          canvas = Canvas(recorder)..scale(_scale);
+          canvas = Canvas(recorder);
+        }
+        if (!cached) {
+          contourBandCache.clear();
         }
         border.copyWith(startOffset: i / 97).paint(canvas, rect);
       });
+      // The first paint of a shape and size builds its band; later ones, as
+      // in an animation, reuse it.
+      final double firstPaint = measurePaint(cached: false);
+      final double paint = measurePaint(cached: true);
       recorder.endRecording().dispose();
 
       out.writeln(
         '${c.name.padRight(18)}${'$pairs'.padLeft(7)}'
-        '${geometry.toStringAsFixed(0).padLeft(10)}'
-        '${vertices.toStringAsFixed(0).padLeft(10)}'
+        '${stripsTime.toStringAsFixed(0).padLeft(10)}'
+        '${bandTime.toStringAsFixed(0).padLeft(10)}'
+        '${firstPaint.toStringAsFixed(0).padLeft(11)}'
         '${paint.toStringAsFixed(0).padLeft(10)}',
       );
     }

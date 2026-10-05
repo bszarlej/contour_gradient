@@ -1,10 +1,7 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
-
-import 'color_stops.dart';
 
 /// A band that runs along a contour, described as matching pairs of points on
 /// its outer and inner edge.
@@ -13,8 +10,8 @@ import 'color_stops.dart';
 /// distance travelled along the band's centre line, so a gradient follows the
 /// contour regardless of its shape.
 ///
-/// This class only knows about geometry; [buildVertices] applies the
-/// coloring.
+/// This class only knows about geometry; [ContourBand] turns strips into
+/// triangles that a gradient can be painted along.
 class ContourStrip {
   ContourStrip._(this.outer, this.inner, this.distances, this.closed);
 
@@ -412,126 +409,6 @@ class ContourStrip {
 
   /// Total length of the centre line.
   double get length => distances.last;
-
-  /// Builds triangles covering [strips], colored by the gradient described
-  /// by [colors] and [stops] as it runs along them one after the other.
-  ///
-  /// [startOffset] shifts the gradient along the strips as a fraction of their
-  /// total length. The gradient wraps around, so offsets of 0.0 and 1.0 are
-  /// equivalent.
-  ///
-  /// Quads are cut at every stop and at the point where the gradient wraps,
-  /// so hard stops stay sharp. Returns null if the strips have no length.
-  static ({ui.Vertices vertices, Rect bounds})? buildVertices(
-    List<ContourStrip> strips, {
-    required List<Color> colors,
-    required List<double> stops,
-    double startOffset = 0.0,
-  }) {
-    final double total = strips.fold(0.0, (double sum, ContourStrip s) {
-      return sum + s.length;
-    });
-    if (total <= 0 || !total.isFinite) {
-      return null;
-    }
-    final List<double> breaks = <double>{0.0, ...stops}.toList();
-    final List<double> positions = <double>[];
-    final List<int> vertexColors = <int>[];
-    double left = double.infinity;
-    double top = double.infinity;
-    double right = double.negativeInfinity;
-    double bottom = double.negativeInfinity;
-
-    void addPoint(Offset p) {
-      positions
-        ..add(p.dx)
-        ..add(p.dy);
-      left = math.min(left, p.dx);
-      top = math.min(top, p.dy);
-      right = math.max(right, p.dx);
-      bottom = math.max(bottom, p.dy);
-    }
-
-    void addQuad(
-      Offset oa,
-      Offset ia,
-      Offset ob,
-      Offset ib,
-      Color ca,
-      Color cb,
-    ) {
-      addPoint(oa);
-      addPoint(ia);
-      addPoint(ib);
-      addPoint(oa);
-      addPoint(ib);
-      addPoint(ob);
-      final int a = ca.toARGB32();
-      final int b = cb.toARGB32();
-      vertexColors.addAll(<int>[a, a, b, a, b, b]);
-    }
-
-    double travelled = 0;
-    for (final ContourStrip strip in strips) {
-      final List<Offset> outer = strip.outer;
-      final List<Offset> inner = strip.inner;
-      for (int k = 0; k < outer.length - 1; k++) {
-        final double ua =
-            (travelled + strip.distances[k]) / total + startOffset;
-        final double ub =
-            (travelled + strip.distances[k + 1]) / total + startOffset;
-        final double span = ub - ua;
-
-        final List<double> cuts = <double>[ua];
-        for (int period = ua.floor(); period <= ub.floor(); period++) {
-          for (final double b in breaks) {
-            final double cut = period + b;
-            if (cut > ua && cut < ub) {
-              cuts.add(cut);
-            }
-          }
-        }
-        cuts
-          ..sort()
-          ..add(ub);
-
-        for (int j = 0; j < cuts.length - 1; j++) {
-          final double x = cuts[j];
-          final double y = cuts[j + 1];
-          // A quad with no length along the centre line, as in the fan of a
-          // corner, is a single piece.
-          final double fx = span > 0 ? (x - ua) / span : 0.0;
-          final double fy = span > 0 ? (y - ua) / span : 1.0;
-          // Every point of this piece lies in one stop interval of one
-          // period; its midpoint tells which.
-          final double mid = (x + y) / 2;
-          final int period = mid.floor();
-          final double hint = mid - period;
-          addQuad(
-            Offset.lerp(outer[k], outer[k + 1], fx)!,
-            Offset.lerp(inner[k], inner[k + 1], fx)!,
-            Offset.lerp(outer[k], outer[k + 1], fy)!,
-            Offset.lerp(inner[k], inner[k + 1], fy)!,
-            colorAt(colors, stops, x - period, segmentHint: hint),
-            colorAt(colors, stops, y - period, segmentHint: hint),
-          );
-        }
-      }
-      travelled += strip.length;
-    }
-
-    if (positions.isEmpty) {
-      return null;
-    }
-    return (
-      vertices: ui.Vertices.raw(
-        ui.VertexMode.triangles,
-        Float32List.fromList(positions),
-        colors: Int32List.fromList(vertexColors),
-      ),
-      bounds: Rect.fromLTRB(left, top, right, bottom),
-    );
-  }
 }
 
 /// A contour sampled as a polyline.

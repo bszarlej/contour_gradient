@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:contour_gradient/contour_gradient.dart';
 import 'package:contour_gradient/src/color_stops.dart';
+import 'package:contour_gradient/src/contour_band.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -426,6 +427,33 @@ void main() {
       expect(pixels.at(5, 50), isColorCloseTo(lerpAt(0.125)));
     });
 
+    test('startOffsets a whole number apart look the same', () async {
+      Future<Pixels> withOffset(double offset) => render(
+        ContourGradientBorder(
+          colors: const <Color>[red, blue],
+          startOffset: offset,
+          side: side,
+        ),
+        size,
+      );
+      final Pixels expected = await withOffset(0.25);
+      for (final double offset in <double>[1.25, 7.25, -0.75]) {
+        final Pixels pixels = await withOffset(offset);
+        for (final Offset p in const <Offset>[
+          Offset(50, 5),
+          Offset(95, 50),
+          Offset(50, 95),
+          Offset(5, 50),
+        ]) {
+          expect(
+            pixels.at(p.dx, p.dy),
+            isColorCloseTo(expected.at(p.dx, p.dy), tolerance: 0.01),
+            reason: 'startOffset $offset at $p',
+          );
+        }
+      }
+    });
+
     test('follows the length of a wide box, unlike a sweep', () async {
       // On a 400x40 box, the midpoint of the gradient is halfway along the
       // perimeter, which is the far end of the bottom edge from the start.
@@ -581,6 +609,89 @@ void main() {
       );
       recorder.endRecording().dispose();
     });
+  });
+
+  group('band cache', () {
+    void paint(ShapeBorder border, Rect rect) {
+      final ui.PictureRecorder recorder = ui.PictureRecorder();
+      border.paint(Canvas(recorder), rect, textDirection: TextDirection.ltr);
+      recorder.endRecording().dispose();
+    }
+
+    setUp(contourBandCache.clear);
+
+    test('reuses the band while only the gradient changes', () {
+      const ContourGradientBorder border = ContourGradientBorder(
+        colors: <Color>[red, blue],
+        shape: StarBorder(),
+        side: BorderSide(width: 4),
+      );
+      const Rect rect = Rect.fromLTWH(0, 0, 90, 90);
+      paint(border, rect);
+      expect(contourBandCache.length, 1);
+      paint(border.copyWith(startOffset: 0.5), rect);
+      paint(
+        border.copyWith(colors: <Color>[blue, red, blue], startOffset: 0.7),
+        rect.shift(const Offset(40, 25)),
+      );
+      expect(contourBandCache.length, 1);
+      paint(border, const Rect.fromLTWH(0, 0, 80, 90));
+      paint(border.copyWith(side: const BorderSide(width: 5)), rect);
+      expect(contourBandCache.length, 3);
+    });
+
+    test('discards the least recently used band when full', () {
+      final List<String> built = <String>[];
+      final List<String> discarded = <String>[];
+      final LruCache<String, String> cache = LruCache<String, String>(
+        2,
+        discarded.add,
+      );
+      String build(String key) {
+        built.add(key);
+        return key;
+      }
+
+      cache.get('a', () => build('a'));
+      cache.get('b', () => build('b'));
+      cache.get('a', () => build('a'));
+      cache.get('c', () => build('c'));
+      cache.get('a', () => build('a'));
+      cache.get('b', () => build('b'));
+      expect(built, <String>['a', 'b', 'c', 'b']);
+      expect(discarded, <String>['b', 'c']);
+      expect(cache.length, 2);
+      cache.clear();
+      expect(discarded, <String>['b', 'c', 'a', 'b']);
+      expect(cache.length, 0);
+    });
+
+    for (final MapEntry<String, OutlinedBorder> shape
+        in const <String, OutlinedBorder>{
+          'rounded rectangle': RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16)),
+          ),
+          'star': StarBorder(innerRadiusRatio: 0.5),
+        }.entries) {
+      test('a ${shape.key} paints the same wherever its box is', () async {
+        final ContourGradientBorder border = ContourGradientBorder(
+          colors: const <Color>[red, blue, Color(0xFF00FF00)],
+          startOffset: 0.3,
+          shape: shape.value,
+          side: const BorderSide(width: 6),
+        );
+        const Size size = Size(90, 70);
+        final Pixels near = await render(border, size);
+        // The band built for the first box is reused for this one.
+        final Pixels far = await render(border, size, pad: 37);
+        expect(contourBandCache.length, 1);
+        for (double y = -8; y < size.height + 8; y++) {
+          for (double x = -8; x < size.width + 8; x++) {
+            expect(far.at(x, y), near.at(x, y), reason: 'at ($x, $y)');
+          }
+        }
+      });
+    }
   });
 
   group('ShapeBorder contract', () {
