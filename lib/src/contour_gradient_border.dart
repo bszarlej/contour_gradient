@@ -65,13 +65,13 @@ import 'contour_strip.dart';
 /// the geometry is colored, which costs little.
 ///
 /// Borders whose outline is a rounded rectangle ([RoundedRectangleBorder],
-/// [StadiumBorder] and a circular [CircleBorder]) get geometry that follows
-/// the outline exactly, which is quick to build, and are clipped to their
-/// area. Other shapes get geometry along their path, which takes longer to
-/// build, and is then masked by the shape's own border, which costs two
-/// [Canvas.saveLayer] calls. Layers take a lot of memory, so many such
-/// borders on screen at once, as in a long list of animated stars, use far
-/// more of it than rounded rectangles do.
+/// [StadiumBorder] and a circular [CircleBorder]), [BeveledRectangleBorder]s
+/// and [LinearBorder]s get geometry that follows the border exactly, which is
+/// quick to build, and are clipped to their area. Other shapes get geometry
+/// along their path, which takes longer to build, and is then masked by the
+/// shape's own border, which costs two [Canvas.saveLayer] calls. Layers take
+/// a lot of memory, so many such borders on screen at once, as in a long
+/// list of animated stars, use far more of it than rounded rectangles do.
 class ContourGradientBorder extends OutlinedBorder {
   /// Creates a border shaped like [shape], painted with a gradient along its
   /// length.
@@ -275,18 +275,29 @@ class ContourGradientBorder extends OutlinedBorder {
         textDirection,
         bandScale,
       ),
-      () => outline != null
-          ? ContourBand.fromStrips(<ContourStrip>[
-              _rrectStrip(outline.shift(-rect.topLeft), margin),
-            ], area: _rrectArea(outline.shift(-rect.topLeft)))
-          : ContourBand.fromStrips(
-              _stripsAlongShape(
-                Offset.zero & rect.size,
-                textDirection,
-                margin,
-                bandScale,
-              ),
-            ),
+      () {
+        final Rect box = Offset.zero & rect.size;
+        if (outline != null) {
+          final RRect atOrigin = outline.shift(-rect.topLeft);
+          return ContourBand.fromStrips(<ContourStrip>[
+            _rrectStrip(atOrigin, margin),
+          ], area: _rrectArea(atOrigin));
+        }
+        final List<ContourStrip>? mitered = _miteredStrips(
+          box,
+          textDirection,
+          margin,
+        );
+        if (mitered != null) {
+          return ContourBand.fromStrips(
+            mitered,
+            area: _filledOutline(box, textDirection),
+          );
+        }
+        return ContourBand.fromStrips(
+          _stripsAlongShape(box, textDirection, margin, bandScale),
+        );
+      },
     );
     if (band == null) {
       return;
@@ -394,7 +405,7 @@ class ContourGradientBorder extends OutlinedBorder {
     // corners. A LinearBorder only gets a band along the edges it draws.
     final OutlinedBorder shape = this.shape;
     final Path centreLine = switch (shape) {
-      LinearBorder() => _linearBorderLine(shape, rect, textDirection, margin),
+      LinearBorder() => _linearBorderPath(shape, rect, textDirection, margin),
       ContinuousRectangleBorder() => shape.getOuterPath(
         rect,
         textDirection: textDirection,
@@ -409,6 +420,85 @@ class ContourGradientBorder extends OutlinedBorder {
       halfWidth: side.width + margin,
       step: 2.0 / scale,
     );
+  }
+
+  /// For shapes whose border is filled by [_paintOutline], a band around
+  /// [rect] that covers the border exactly, reaching [margin] past it, and
+  /// neither overlaps itself nor has gaps. Returns null for other shapes, or
+  /// if the border is too thick for such a band.
+  List<ContourStrip>? _miteredStrips(
+    Rect rect,
+    TextDirection? textDirection,
+    double margin,
+  ) {
+    final OutlinedBorder shape = this.shape;
+    final double halfWidth = side.width / 2 + margin;
+    final List<ContourStrip> strips = <ContourStrip>[];
+    switch (shape) {
+      case BeveledRectangleBorder():
+        // The centre of the border lies between the outlines that
+        // _paintOutline fills.
+        final List<Offset>? centre = _offsetPolygon(
+          _beveledOutline(
+            shape.borderRadius.resolve(textDirection).toRRect(rect),
+          ),
+          (side.strokeOutset - side.strokeInset) / 2,
+        );
+        final ContourStrip? strip = centre == null
+            ? null
+            : ContourStrip.mitered(centre, halfWidth: halfWidth);
+        if (strip == null) {
+          return null;
+        }
+        strips.add(strip);
+      case LinearBorder():
+        for (final (List<Offset> points, bool closed) in _linearBorderLines(
+          shape,
+          rect,
+          textDirection,
+          margin,
+        )) {
+          final ContourStrip? strip = ContourStrip.mitered(
+            points,
+            halfWidth: halfWidth,
+            closed: closed,
+          );
+          if (strip == null) {
+            return null;
+          }
+          strips.add(strip);
+        }
+        // Separate lines whose bands overlap, as where two edges almost
+        // meet, would be painted twice there.
+        final List<Rect> bounds = <Rect>[
+          for (final ContourStrip strip in strips)
+            _boundsOf(<Offset>[...strip.outer, ...strip.inner]),
+        ];
+        for (int a = 0; a < bounds.length; a++) {
+          for (int b = a + 1; b < bounds.length; b++) {
+            if (bounds[a].overlaps(bounds[b])) {
+              return null;
+            }
+          }
+        }
+      default:
+        return null;
+    }
+    return strips.isEmpty ? null : strips;
+  }
+
+  static Rect _boundsOf(List<Offset> points) {
+    double left = double.infinity;
+    double top = double.infinity;
+    double right = double.negativeInfinity;
+    double bottom = double.negativeInfinity;
+    for (final Offset p in points) {
+      left = math.min(left, p.dx);
+      top = math.min(top, p.dy);
+      right = math.max(right, p.dx);
+      bottom = math.max(bottom, p.dy);
+    }
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
   /// Paints [band], built around a box at the origin, with [paint], clipped to
@@ -500,6 +590,19 @@ class ContourGradientBorder extends OutlinedBorder {
     TextDirection? textDirection,
     Color color,
   ) {
+    final Path? filled = _filledOutline(rect, textDirection);
+    if (filled != null) {
+      canvas.drawPath(filled, Paint()..color = color);
+      return;
+    }
+    shape
+        .copyWith(side: side.copyWith(color: color))
+        .paint(canvas, rect, textDirection: textDirection);
+  }
+
+  /// The area [_paintOutline] fills around [rect], for the shapes it paints
+  /// itself. Returns null for shapes that paint their own border.
+  Path? _filledOutline(Rect rect, TextDirection? textDirection) {
     final OutlinedBorder shape = this.shape;
     if (shape is LinearBorder) {
       final Path path = Path();
@@ -512,25 +615,22 @@ class ContourGradientBorder extends OutlinedBorder {
           path.addRect(edge.shift(rect.topLeft));
         }
       }
-      canvas.drawPath(path, Paint()..color = color);
-      return;
+      return path;
     }
     if (shape is BeveledRectangleBorder) {
       final List<Offset> outline = _beveledOutline(
         shape.borderRadius.resolve(textDirection).toRRect(rect),
       );
-      canvas.drawPath(
-        Path()
-          ..fillType = PathFillType.evenOdd
-          ..addPolygon(_offsetPolygon(outline, side.strokeOutset), true)
-          ..addPolygon(_offsetPolygon(outline, -side.strokeInset), true),
-        Paint()..color = color,
-      );
-      return;
+      return Path()
+        ..fillType = PathFillType.evenOdd
+        ..addPolygon(_offsetPolygon(outline, side.strokeOutset)!, true)
+        // Where the border is too thick for its box, it has no hole.
+        ..addPolygon(
+          _offsetPolygon(outline, -side.strokeInset) ?? const <Offset>[],
+          true,
+        );
     }
-    shape
-        .copyWith(side: side.copyWith(color: color))
-        .paint(canvas, rect, textDirection: textDirection);
+    return null;
   }
 
   /// The corners of the outline of a [BeveledRectangleBorder] around [rrect],
@@ -564,30 +664,14 @@ class ContourGradientBorder extends OutlinedBorder {
 
   /// Moves every edge of the convex, clockwise polygon [points] outwards by
   /// [distance], or inwards if it is negative, and returns where the moved
-  /// edges meet.
-  static List<Offset> _offsetPolygon(List<Offset> points, double distance) {
-    final int n = points.length;
-    if (n < 3 || distance == 0) {
+  /// edges meet. Edges too short to move that far inwards are dropped, as
+  /// [ContourStrip.offsetPolyline] describes. Returns null if the polygon
+  /// closes up.
+  static List<Offset>? _offsetPolygon(List<Offset> points, double distance) {
+    if (points.length < 3 || distance == 0) {
       return points;
     }
-    // The outward normal of each edge.
-    final List<Offset> normals = <Offset>[
-      for (int i = 0; i < n; i++)
-        () {
-          final Offset e = points[(i + 1) % n] - points[i];
-          return Offset(e.dy, -e.dx) / e.distance;
-        }(),
-    ];
-    return <Offset>[
-      for (int i = 0; i < n; i++)
-        () {
-          final Offset a = normals[(i - 1 + n) % n];
-          final Offset b = normals[i];
-          // The moved edges meet on the bisector of the two normals.
-          final double dot = a.dx * b.dx + a.dy * b.dy;
-          return points[i] + (a + b) * (distance / (1 + dot));
-        }(),
-    ];
+    return ContourStrip.offsetPolyline(points, distance);
   }
 
   /// Where [LinearBorder.paint] puts each edge of [shape] around a box of
@@ -633,15 +717,35 @@ class ContourGradientBorder extends OutlinedBorder {
     ];
   }
 
-  /// The line along the middle of the edges that [shape] draws around
-  /// [rect], so that the gradient runs along those edges only.
+  /// [_linearBorderLines] as a path.
+  Path _linearBorderPath(
+    LinearBorder shape,
+    Rect rect,
+    TextDirection? textDirection,
+    double margin,
+  ) {
+    final Path path = Path();
+    for (final (List<Offset> points, bool closed) in _linearBorderLines(
+      shape,
+      rect,
+      textDirection,
+      margin,
+    )) {
+      path.addPolygon(points, closed);
+    }
+    return path;
+  }
+
+  /// The lines along the middle of the edges that [shape] draws around
+  /// [rect], so that the gradient runs along those edges only, and whether
+  /// each is closed.
   ///
   /// Edges that meet at a corner are joined into one line. Each line runs
   /// from its end nearest the top-left corner of [rect], and the lines are
   /// ordered by that end. If all four edges meet, they form a loop. The ends
   /// of each line are extended by [margin], to color the anti-aliased pixels
   /// at the ends of the edges.
-  Path _linearBorderLine(
+  List<(List<Offset>, bool)> _linearBorderLines(
     LinearBorder shape,
     Rect rect,
     TextDirection? textDirection,
@@ -696,11 +800,10 @@ class ContourGradientBorder extends OutlinedBorder {
     final List<Offset?> corners = <Offset?>[
       for (int i = 0; i < 4; i++) corner(i),
     ];
-    final Path path = Path();
     if (corners.every((Offset? c) => c != null)) {
-      return path..addPolygon(<Offset>[
-        for (final Offset? c in corners) c! + rect.topLeft,
-      ], true);
+      return <(List<Offset>, bool)>[
+        (<Offset>[for (final Offset? c in corners) c! + rect.topLeft], true),
+      ];
     }
 
     final List<List<Offset>> lines = <List<Offset>>[];
@@ -736,16 +839,24 @@ class ContourGradientBorder extends OutlinedBorder {
       return length > 0 ? end + d * (margin / length) : end;
     }
 
-    for (final List<Offset> points in lines) {
-      points
-        ..first = extend(points.first, points[1])
-        ..last = extend(points.last, points[points.length - 2]);
-      path.moveTo(points.first.dx + rect.left, points.first.dy + rect.top);
-      for (final Offset p in points.skip(1)) {
-        path.lineTo(p.dx + rect.left, p.dy + rect.top);
-      }
-    }
-    return path;
+    return <(List<Offset>, bool)>[
+      for (final List<Offset> points in lines)
+        (
+          <Offset>[
+            for (int k = 0; k < points.length; k++)
+              rect.topLeft +
+                  switch (k) {
+                    0 => extend(points.first, points[1]),
+                    _ when k == points.length - 1 => extend(
+                      points.last,
+                      points[points.length - 2],
+                    ),
+                    _ => points[k],
+                  },
+          ],
+          false,
+        ),
+    ];
   }
 
   bool _debugAssertValidStops() {

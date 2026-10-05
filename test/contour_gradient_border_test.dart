@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:contour_gradient/contour_gradient.dart';
 import 'package:contour_gradient/src/color_stops.dart';
 import 'package:contour_gradient/src/contour_band.dart';
+import 'package:contour_gradient/src/contour_strip.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -224,8 +225,9 @@ void main() {
         ContourGradientBorder(colors: colors, shape: shape, side: side),
         size,
       );
-      // Borders whose outline is a rounded rectangle are clipped to their
-      // area rather than masked by the shape's own border. Where the engine
+      // Borders whose outline is a rounded rectangle, beveled borders and
+      // linear borders are clipped to their area rather than masked by the
+      // shape's own border. Where the engine
       // flattens the curves of the clip, its edge can lie a fraction of a
       // pixel from the shape's, so a pixel is compared with the range of
       // coverages of the expected pixels around it. That the clip leaves no
@@ -233,6 +235,8 @@ void main() {
       final bool clipped =
           shape.runtimeType == RoundedRectangleBorder ||
           shape.runtimeType == StadiumBorder ||
+          shape is BeveledRectangleBorder ||
+          shape is LinearBorder ||
           (shape.runtimeType == CircleBorder &&
               (shape as CircleBorder).eccentricity == 0);
       int distanceFromNeighbours(int i, int alpha) {
@@ -364,6 +368,23 @@ void main() {
             );
           }
         }
+      }
+    });
+
+    test('a bevel whose sides are short', () async {
+      for (final double align in aligns.values) {
+        expect(
+          await maxAlphaDifference(
+            const BeveledRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+            ),
+            const Size(31.3, 20.85),
+            BorderSide(color: red, width: 3, strokeAlign: align),
+            const <Color>[red, red],
+          ),
+          lessThanOrEqualTo(40),
+          reason: 'strokeAlign $align',
+        );
       }
     });
 
@@ -598,15 +619,15 @@ void main() {
       expect(pixels.at(5, 50), blue);
     });
 
-    test('masked shapes place colors like the direct path', () async {
-      // A beveled rectangle without bevels is a rectangle, but goes through
-      // the generic, masked path.
+    test('mitered bands place colors like rounded rectangles', () async {
+      // A beveled rectangle without bevels is a rectangle, but its band is
+      // built from its corners rather than as a rounded rectangle.
       const List<Color> colors = <Color>[red, blue, Color(0xFF00FF00), red];
       final Pixels direct = await render(
         const ContourGradientBorder(colors: colors, side: side),
         size,
       );
-      final Pixels masked = await render(
+      final Pixels mitered = await render(
         const ContourGradientBorder(
           colors: colors,
           shape: BeveledRectangleBorder(),
@@ -626,7 +647,7 @@ void main() {
         (5, 25),
       ]) {
         expect(
-          masked.at(x, y),
+          mitered.at(x, y),
           isColorCloseTo(direct.at(x, y)),
           reason: '($x, $y)',
         );
@@ -712,6 +733,193 @@ void main() {
         throwsArgumentError,
       );
       recorder.endRecording().dispose();
+    });
+  });
+
+  group('layers', () {
+    // Counts the layers a border paints with, and passes everything else on
+    // to a real canvas.
+    int layersOf(OutlinedBorder shape, {double width = 3}) {
+      final _LayerCountingCanvas canvas = _LayerCountingCanvas(
+        Canvas(ui.PictureRecorder()),
+      );
+      ContourGradientBorder(
+        colors: const <Color>[red, blue],
+        shape: shape,
+        side: BorderSide(width: width),
+      ).paint(
+        canvas,
+        const Rect.fromLTWH(10, 10, 140, 90),
+        textDirection: TextDirection.ltr,
+      );
+      return canvas.layers;
+    }
+
+    test('are not used by shapes that can be clipped', () {
+      for (final OutlinedBorder shape in <OutlinedBorder>[
+        const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        const StadiumBorder(),
+        const CircleBorder(),
+        const BeveledRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        const LinearBorder(bottom: LinearBorderEdge()),
+        const LinearBorder(
+          start: LinearBorderEdge(),
+          end: LinearBorderEdge(),
+          top: LinearBorderEdge(),
+          bottom: LinearBorderEdge(),
+        ),
+      ]) {
+        expect(layersOf(shape), 0, reason: '$shape');
+      }
+    });
+
+    test('are used by shapes that stroke their border', () {
+      for (final OutlinedBorder shape in <OutlinedBorder>[
+        const StarBorder(),
+        const OvalBorder(),
+        const RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        const ContinuousRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+      ]) {
+        expect(layersOf(shape), 2, reason: '$shape');
+      }
+    });
+
+    test('are not used by a bevel whose sides are short', () {
+      // Bevels of 10 leave the sides of this box under a pixel long, much
+      // shorter than the border is wide.
+      final _LayerCountingCanvas canvas = _LayerCountingCanvas(
+        Canvas(ui.PictureRecorder()),
+      );
+      const ContourGradientBorder(
+        colors: <Color>[red, blue],
+        shape: BeveledRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(10)),
+        ),
+        side: BorderSide(width: 3),
+      ).paint(
+        canvas,
+        const Rect.fromLTWH(0, 0, 31.3, 20.85),
+        textDirection: TextDirection.ltr,
+      );
+      expect(canvas.layers, 0);
+    });
+
+    test('are used by a bevel too thick for its box', () {
+      expect(
+        layersOf(
+          const BeveledRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+          ),
+          width: 60,
+        ),
+        2,
+      );
+    });
+  });
+
+  group('ContourStrip.mitered', () {
+    double polygonArea(List<Offset> points) {
+      double area = 0;
+      for (int k = 0; k < points.length; k++) {
+        final Offset a = points[k];
+        final Offset b = points[(k + 1) % points.length];
+        area += a.dx * b.dy - a.dy * b.dx;
+      }
+      return area.abs() / 2;
+    }
+
+    // The total area of the strip's quads.
+    double quadsArea(ContourStrip strip) {
+      double area = 0;
+      for (int k = 0; k < strip.outer.length - 1; k++) {
+        area += polygonArea(<Offset>[
+          strip.outer[k],
+          strip.outer[k + 1],
+          strip.inner[k + 1],
+          strip.inner[k],
+        ]);
+      }
+      return area;
+    }
+
+    // A rectangle with its top-left corner cut off, running anticlockwise.
+    const List<Offset> polygon = <Offset>[
+      Offset(0, 20),
+      Offset(0, 100),
+      Offset(150, 100),
+      Offset(150, 0),
+      Offset(20, 0),
+    ];
+
+    test('covers the band between its edges without overlapping', () {
+      final ContourStrip strip = ContourStrip.mitered(polygon, halfWidth: 4)!;
+      final List<Offset> outer = strip.outer.sublist(0, strip.outer.length - 1);
+      final List<Offset> inner = strip.inner.sublist(0, strip.inner.length - 1);
+      expect(
+        quadsArea(strip),
+        closeTo(polygonArea(outer) - polygonArea(inner), 1e-6),
+      );
+    });
+
+    test('runs clockwise from the point nearest the top-left', () {
+      final ContourStrip strip = ContourStrip.mitered(polygon, halfWidth: 4)!;
+      final Offset start = (strip.outer.first + strip.inner.first) / 2;
+      // The middle of the cut-off corner.
+      expect(start.dx, closeTo(10, 1e-9));
+      expect(start.dy, closeTo(10, 1e-9));
+      // Clockwise on screen, the band heads right along the top next.
+      final Offset next = (strip.outer[1] + strip.inner[1]) / 2;
+      expect(next.dx, greaterThan(start.dx));
+      expect(
+        strip.length,
+        closeTo(2 * 150 + 2 * 100 - 40 + 20 * math.sqrt2, 1e-9),
+      );
+    });
+
+    test('drops edges too short to move that far', () {
+      // A hexagon whose left and right sides are a pixel long.
+      const List<Offset> hexagon = <Offset>[
+        Offset(10, 0),
+        Offset(30, 0),
+        Offset(40, 10),
+        Offset(40, 11),
+        Offset(30, 21),
+        Offset(10, 21),
+        Offset(0, 11),
+        Offset(0, 10),
+      ];
+      final List<Offset> moved = ContourStrip.offsetPolyline(hexagon, -3)!;
+      // The sides close up where the bevels on either side of them meet.
+      expect(moved[2], moved[3]);
+      expect(moved[6], moved[7]);
+      expect(moved[2].dx, closeTo(40.5 - 3 * math.sqrt2, 1e-9));
+      expect(moved[2].dy, closeTo(10.5, 1e-9));
+      // The other edges stay 3 inside the hexagon.
+      expect(moved[0].dy, closeTo(3, 1e-9));
+      expect(moved[4].dy, closeTo(18, 1e-9));
+    });
+
+    test('offsetPolyline is null where the polygon closes up', () {
+      const List<Offset> square = <Offset>[
+        Offset(0, 0),
+        Offset(10, 0),
+        Offset(10, 10),
+        Offset(0, 10),
+      ];
+      expect(ContourStrip.offsetPolyline(square, -4), isNotNull);
+      expect(ContourStrip.offsetPolyline(square, -6), isNull);
+    });
+
+    test('is null where the band would turn inside out', () {
+      expect(ContourStrip.mitered(polygon, halfWidth: 60), isNull);
     });
   });
 
@@ -1264,4 +1472,83 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+}
+
+/// A canvas that counts [saveLayer] calls and passes every call on to
+/// [canvas].
+class _LayerCountingCanvas implements Canvas {
+  _LayerCountingCanvas(this.canvas);
+
+  final Canvas canvas;
+  int layers = 0;
+
+  @override
+  void saveLayer(Rect? bounds, Paint paint) {
+    layers++;
+    canvas.saveLayer(bounds, paint);
+  }
+
+  @override
+  void save() => canvas.save();
+
+  @override
+  void restore() => canvas.restore();
+
+  @override
+  int getSaveCount() => canvas.getSaveCount();
+
+  @override
+  void translate(double dx, double dy) => canvas.translate(dx, dy);
+
+  @override
+  void scale(double sx, [double? sy]) => canvas.scale(sx, sy);
+
+  @override
+  void transform(Float64List matrix4) => canvas.transform(matrix4);
+
+  @override
+  Float64List getTransform() => canvas.getTransform();
+
+  @override
+  void clipPath(Path path, {bool doAntiAlias = true}) =>
+      canvas.clipPath(path, doAntiAlias: doAntiAlias);
+
+  @override
+  void clipRect(
+    Rect rect, {
+    ui.ClipOp clipOp = ui.ClipOp.intersect,
+    bool doAntiAlias = true,
+  }) => canvas.clipRect(rect, clipOp: clipOp, doAntiAlias: doAntiAlias);
+
+  @override
+  void drawVertices(ui.Vertices vertices, BlendMode blendMode, Paint paint) =>
+      canvas.drawVertices(vertices, blendMode, paint);
+
+  @override
+  void drawPath(Path path, Paint paint) => canvas.drawPath(path, paint);
+
+  @override
+  void drawRect(Rect rect, Paint paint) => canvas.drawRect(rect, paint);
+
+  @override
+  void drawRRect(RRect rrect, Paint paint) => canvas.drawRRect(rrect, paint);
+
+  @override
+  void drawDRRect(RRect outer, RRect inner, Paint paint) =>
+      canvas.drawDRRect(outer, inner, paint);
+
+  @override
+  void drawOval(Rect rect, Paint paint) => canvas.drawOval(rect, paint);
+
+  @override
+  void drawCircle(Offset c, double radius, Paint paint) =>
+      canvas.drawCircle(c, radius, paint);
+
+  @override
+  void drawRSuperellipse(ui.RSuperellipse rsuperellipse, Paint paint) =>
+      canvas.drawRSuperellipse(rsuperellipse, paint);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
 }

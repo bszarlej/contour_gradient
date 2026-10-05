@@ -131,3 +131,33 @@ of `adb shell dumpsys meminfo com.example.contour_gradient_example` while
 
 Each layer costs a few megabytes per border on Impeller, far more than the
 border's pixels, so layers, not geometry, dominate memory.
+
+## Bevels and linear borders clipped too (unreleased)
+
+Same device and conditions. Beveled and linear borders get bands that follow
+their corners exactly, and are clipped like rounded rectangles. Only shapes
+that stroke their border (star, oval, superellipse, continuous rectangle)
+still use layers.
+
+`paint()` cost, µs per border:
+
+| Rounded rectangle | Stadium | Beveled | Superellipse | Oval | Star |
+| ----------------: | ------: | ------: | -----------: | ---: | ---: |
+|                 6 |       5 |       5 |           13 |    9 |   14 |
+
+Frame timings, ms:
+
+| Scenario  | Frames | Build avg | Build p99 | Raster avg | Raster p99 |
+| --------- | -----: | --------: | --------: | ---------: | ---------: |
+| rrect_24  |    611 |       1.5 |       2.2 |        2.7 |        3.8 |
+| rrect_96  |    585 |       3.5 |       9.4 |        4.4 |        5.3 |
+| rrect_240 |    565 |       4.9 |      10.9 |        5.6 |        6.9 |
+| star_24   |    598 |       1.1 |       1.4 |        5.9 |        6.7 |
+| star_96   |    569 |       5.3 |      10.1 |        8.4 |        8.8 |
+| star_240  |    257 |      11.0 |      17.2 |       19.2 |       19.9 |
+| mixed_24  |    598 |       1.2 |       1.5 |        5.4 |        6.1 |
+| mixed_96  |    589 |       4.2 |       9.9 |        5.9 |       10.9 |
+| mixed_240 |    351 |       8.0 |      17.9 |       10.8 |       19.5 |
+
+Graphics memory with 240 animated bevels on screen: 1,677 MB masked in two
+layers, 148 MB clipped.

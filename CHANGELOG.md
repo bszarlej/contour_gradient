@@ -13,6 +13,12 @@
   1.5 GB of graphics memory, and now uses 151 MB, while raster time per frame
   went from 11.9 to 5.6 ms. Their anti-aliased edges can differ from the
   shape's own by a fraction of a pixel.
+* `BeveledRectangleBorder` and `LinearBorder` borders are now clipped the same
+  way, with geometry that follows their corners exactly: 240 animated bevels
+  went from 1.7 GB of graphics memory to 148 MB, and from 18.4 to 5.4 ms of
+  raster time per frame. A bevel too thick for its box is still masked.
+* Fixed the inner edge of a `BeveledRectangleBorder` whose sides are shorter
+  than its border is wide, which crossed over itself in a small bow tie.
 * Borders now take the device pixel ratio into account when they sample
   their outline. They used to sample it as if it were 1, so on most phones
   the gradient followed curves more coarsely than intended.

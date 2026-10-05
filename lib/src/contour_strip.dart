@@ -128,6 +128,235 @@ class ContourStrip {
     return ContourStrip.fromPairs(o, i);
   }
 
+  /// Builds the band of half-width [halfWidth] centred on the polyline
+  /// [points], with mitered corners.
+  ///
+  /// Each corner gets a single pair, on the line where the band's edges
+  /// meet, so unlike [ContourStrip.alongPath], the band neither overlaps
+  /// itself nor has gaps. Where an edge of the band is too short for its
+  /// width, it is dropped, as [offsetPolyline] describes. Returns null if the
+  /// band is too wide for the polyline altogether.
+  ///
+  /// If [closed] is true, the band is made to run clockwise and to start at
+  /// the point of the polyline nearest the top-left corner of its bounds, as
+  /// [ContourStrip.alongPath] does.
+  static ContourStrip? mitered(
+    List<Offset> points, {
+    required double halfWidth,
+    bool closed = true,
+  }) {
+    final List<Offset> p = <Offset>[];
+    for (final Offset point in points) {
+      if (p.isEmpty || (point - p.last).distanceSquared > 1e-12) {
+        p.add(point);
+      }
+    }
+    while (closed &&
+        p.length > 1 &&
+        (p.first - p.last).distanceSquared <= 1e-12) {
+      p.removeLast();
+    }
+    if (p.length < (closed ? 3 : 2)) {
+      return null;
+    }
+    if (closed) {
+      _startNearTopLeft(p);
+    }
+
+    final int n = p.length;
+    final int segments = closed ? n : n - 1;
+    final List<Offset> directions = <Offset>[
+      for (int k = 0; k < segments; k++) _unit(p[(k + 1) % n] - p[k]),
+    ];
+    final List<Offset>? o = offsetPolyline(p, halfWidth, closed: closed);
+    final List<Offset>? i = offsetPolyline(p, -halfWidth, closed: closed);
+    if (o == null || i == null) {
+      return null;
+    }
+    // Like ContourStrip.rrectRing, the part of each edge that its outer and
+    // inner sides share is split off, so that it gets rectangular quads. A
+    // trapezoid's two triangles would stretch the gradient differently.
+    final List<Offset> outer = <Offset>[];
+    final List<Offset> inner = <Offset>[];
+    final List<Offset> centres = <Offset>[];
+    for (int k = 0; k < n; k++) {
+      outer.add(o[k]);
+      inner.add(i[k]);
+      centres.add(p[k]);
+      if (k == segments) {
+        break;
+      }
+      final int next = (k + 1) % n;
+      final Offset d = directions[k];
+      double along(Offset v) => v.dx * d.dx + v.dy * d.dy;
+      final double from = math.max(along(o[k]), along(i[k]));
+      final double to = math.min(along(o[next]), along(i[next]));
+      if (to > from) {
+        // Where the band runs straight on through a point, its pair there is
+        // already square to the edge.
+        for (final double at in <double>[
+          if ((along(o[k]) - along(i[k])).abs() > 1e-9) from,
+          if ((along(o[next]) - along(i[next])).abs() > 1e-9) to,
+        ]) {
+          outer.add(o[k] + d * (at - along(o[k])));
+          inner.add(i[k] + d * (at - along(i[k])));
+          centres.add(p[k] + d * (at - along(p[k])));
+        }
+      }
+    }
+    return ContourStrip.fromPairs(
+      outer,
+      inner,
+      centres: centres,
+      closed: closed,
+    );
+  }
+
+  /// Moves every edge of the polyline [points] by [distance] along its
+  /// normal, to the left of its direction, which is outwards on a clockwise
+  /// polygon, and returns where each point ends up: where the moved edges
+  /// on either side of it meet.
+  ///
+  /// An edge that would turn inside out, as a short edge between two corners
+  /// does when moved far enough inwards, is dropped, and the edges on either
+  /// side of it are joined instead; both of its points end up where those
+  /// meet. Returns null if every edge would be dropped, or an end edge of an
+  /// open polyline.
+  ///
+  /// The points must not repeat.
+  static List<Offset>? offsetPolyline(
+    List<Offset> points,
+    double distance, {
+    bool closed = true,
+  }) {
+    final int n = points.length;
+    final int edges = closed ? n : n - 1;
+    if (edges < 1) {
+      return null;
+    }
+    final List<Offset> directions = <Offset>[
+      for (int k = 0; k < edges; k++) _unit(points[(k + 1) % n] - points[k]),
+    ];
+    // The moved edge k runs through bases[k] in directions[k].
+    final List<Offset> bases = <Offset>[
+      for (int k = 0; k < edges; k++)
+        points[k] + _normalOf(directions[k]) * distance,
+    ];
+    final List<bool> kept = List<bool>.filled(edges, true);
+    final List<Offset> moved = List<Offset>.filled(n, Offset.zero);
+
+    // The kept edge nearest to point k before it, or after it, or -1.
+    int keptEdge(int k, int step) {
+      for (int s = 0; s < edges; s++) {
+        final int e = step < 0 ? k - 1 - s : k + s;
+        if (!closed && (e < 0 || e >= edges)) {
+          return -1;
+        }
+        if (kept[e % edges]) {
+          return e % edges;
+        }
+      }
+      return -1;
+    }
+
+    while (true) {
+      for (int k = 0; k < n; k++) {
+        final int before = keptEdge(k, -1);
+        final int after = keptEdge(k, 1);
+        if (before < 0 && after < 0) {
+          return null;
+        }
+        if (before < 0 || after < 0) {
+          // An end of an open polyline stays square to its edge.
+          final int e = before < 0 ? after : before;
+          moved[k] = points[k] + _normalOf(directions[e]) * distance;
+          continue;
+        }
+        final Offset a = directions[before];
+        final Offset b = directions[after];
+        final double denominator = _cross(a, b);
+        if (denominator.abs() < 1e-9) {
+          // Edges that run on in a straight line meet anywhere along it;
+          // edges that turn back on each other have closed up the polygon.
+          if (a.dx * b.dx + a.dy * b.dy < 0) {
+            return null;
+          }
+          moved[k] = points[k] + _normalOf(b) * distance;
+          continue;
+        }
+        moved[k] =
+            bases[before] +
+            a * (_cross(bases[after] - bases[before], b) / denominator);
+      }
+      // Dropping one edge can set its neighbours right, so only the edge
+      // turned furthest inside out is dropped at a time.
+      int worst = -1;
+      double worstLength = -1e-9;
+      for (int e = 0; e < edges; e++) {
+        final Offset d = directions[e];
+        final Offset span = moved[(e + 1) % n] - moved[e];
+        final double length = span.dx * d.dx + span.dy * d.dy;
+        if (kept[e] && length < worstLength) {
+          worst = e;
+          worstLength = length;
+        }
+      }
+      if (worst < 0) {
+        return moved;
+      }
+      if (!closed && (worst == 0 || worst == edges - 1)) {
+        return null;
+      }
+      kept[worst] = false;
+      // A polygon needs three edges to enclose anything.
+      if (closed && kept.where((bool k) => k).length < 3) {
+        return null;
+      }
+    }
+  }
+
+  /// Makes the polygon [points] run clockwise, and rotates it to start at
+  /// its point nearest the top-left corner of its bounds, adding that point
+  /// if it lies between two corners.
+  static void _startNearTopLeft(List<Offset> points) {
+    _normalizeLoop(points);
+    double left = double.infinity;
+    double top = double.infinity;
+    for (final Offset p in points) {
+      left = math.min(left, p.dx);
+      top = math.min(top, p.dy);
+    }
+    final Offset topLeft = Offset(left, top);
+    // _normalizeLoop starts at the nearest corner; the nearest point may lie
+    // on an edge next to it.
+    Offset nearest = points.first;
+    int edge = -1;
+    for (final int k in <int>[points.length - 1, 0]) {
+      final Offset a = points[k];
+      final Offset b = points[(k + 1) % points.length];
+      final Offset ab = b - a;
+      final double t =
+          (((topLeft - a).dx * ab.dx + (topLeft - a).dy * ab.dy) /
+                  ab.distanceSquared)
+              .clamp(0.0, 1.0);
+      final Offset q = a + ab * t;
+      if (t > 0 &&
+          t < 1 &&
+          (q - topLeft).distanceSquared <
+              (nearest - topLeft).distanceSquared - 1e-9) {
+        nearest = q;
+        edge = k;
+      }
+    }
+    if (edge == 0) {
+      points.insert(1, nearest);
+      _rotate(points, 1);
+    } else if (edge > 0) {
+      points.add(nearest);
+      _rotate(points, points.length - 1);
+    }
+  }
+
   /// Builds bands of half-width [halfWidth] centred on each contour of
   /// [path].
   ///
