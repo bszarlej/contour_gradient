@@ -1,3 +1,7 @@
+## 1.2.1
+
+* Use contour_gradient version 1.2.0 in the example app
+
 ## 1.2.0
 
 * Much faster animated borders. Geometry is cached and the gradient is
