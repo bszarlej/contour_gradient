@@ -6,6 +6,8 @@ import 'package:flutter/painting.dart';
 
 import 'color_stops.dart';
 import 'contour_band.dart';
+import 'contour_map.dart';
+import 'contour_shader.dart';
 import 'contour_strip.dart';
 
 /// A border of any [OutlinedBorder] shape, painted with a gradient that runs
@@ -67,11 +69,20 @@ import 'contour_strip.dart';
 /// Borders whose outline is a rounded rectangle ([RoundedRectangleBorder],
 /// [StadiumBorder] and a circular [CircleBorder]), [BeveledRectangleBorder]s
 /// and [LinearBorder]s get geometry that follows the border exactly, which is
-/// quick to build, and are clipped to their area. Other shapes get geometry
-/// along their path, which takes longer to build, and is then masked by the
-/// shape's own border, which costs two [Canvas.saveLayer] calls. Layers take
-/// a lot of memory, so many such borders on screen at once, as in a long
-/// list of animated stars, use far more of it than rounded rectangles do.
+/// quick to build, and are clipped to their area.
+///
+/// Flutter's shapes that stroke their outline ([StarBorder], [OvalBorder], an
+/// oval [CircleBorder], [RoundedSuperellipseBorder] and
+/// [ContinuousRectangleBorder]) get geometry along their path, which takes
+/// longer to build. From it, a small image is made that tells a shader how
+/// far along the border each pixel is, and the shape then strokes its own
+/// border with that shader. The shader and the image are loaded in the
+/// background, the image once the border has been painted twice at the
+/// same size. Until then, the geometry is masked by the shape's own border
+/// instead, as it is for other shapes, including subclasses of these. Masking
+/// costs two [Canvas.saveLayer] calls, and layers take a lot of memory:
+/// many masked borders on screen at once use far more of it than the
+/// others.
 class ContourGradientBorder extends OutlinedBorder {
   /// Creates a border shaped like [shape], painted with a gradient along its
   /// length.
@@ -302,6 +313,17 @@ class ContourGradientBorder extends OutlinedBorder {
     if (band == null) {
       return;
     }
+    // A circular CircleBorder is clipped instead.
+    if (band.area == null && _strokesOwnBorder) {
+      // Both are loaded in the background; until they are, the border is
+      // masked instead.
+      final ContourMap? map = band.map(bandScale);
+      final ui.FragmentShader? shader = contourShader();
+      if (map != null && shader != null) {
+        _paintShaded(canvas, rect, textDirection, map, shader);
+        return;
+      }
+    }
     final Paint paint = Paint()
       ..shader = band.shader(
         colors,
@@ -321,6 +343,19 @@ class ContourGradientBorder extends OutlinedBorder {
         fillGaps: 1 / scale,
       );
     }
+  }
+
+  /// Whether [shape] is one of Flutter's shapes that draw their border with
+  /// a single stroke, which [_paintShaded] can color.
+  ///
+  /// Exact type checks: a subclass might paint differently.
+  bool get _strokesOwnBorder {
+    final Type type = shape.runtimeType;
+    return type == StarBorder ||
+        type == OvalBorder ||
+        type == CircleBorder ||
+        type == RoundedSuperellipseBorder ||
+        type == ContinuousRectangleBorder;
   }
 
   /// [scale] rounded down to a quarter of an octave, so that the band of a
@@ -517,6 +552,38 @@ class ContourGradientBorder extends OutlinedBorder {
       ..clipPath(band.area!)
       ..drawVertices(band.vertices, BlendMode.src, paint)
       ..restore();
+  }
+
+  /// Lets [shape] paint its own border around [rect], colored by [shader]
+  /// from [map], the map of the band built around a box at the origin.
+  ///
+  /// Like [_paintClipped], this needs no layers; and the border is exactly
+  /// the one the shape paints.
+  void _paintShaded(
+    Canvas canvas,
+    Rect rect,
+    TextDirection? textDirection,
+    ContourMap map,
+    ui.FragmentShader shader,
+  ) {
+    final Offset origin = rect.topLeft + map.origin;
+    shader
+      ..setFloat(0, origin.dx)
+      ..setFloat(1, origin.dy)
+      ..setFloat(2, map.scale)
+      ..setFloat(3, map.width.toDouble())
+      ..setFloat(4, map.height.toDouble())
+      ..setFloat(5, startOffset - startOffset.floorToDouble())
+      ..setImageSampler(0, map.image!)
+      ..setImageSampler(
+        1,
+        gradientImage(colors, resolveStops(colors.length, stops)),
+      );
+    _shape.paint(
+      ShadingCanvas(canvas, shader),
+      rect,
+      textDirection: textDirection,
+    );
   }
 
   /// Paints [band], built around a box at the origin, with [paint], masked by

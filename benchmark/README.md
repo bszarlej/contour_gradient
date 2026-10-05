@@ -161,3 +161,40 @@ Frame timings, ms:
 
 Graphics memory with 240 animated bevels on screen: 1,677 MB masked in two
 layers, 148 MB clipped.
+
+## Stroked shapes shaded (unreleased)
+
+Same device and conditions. Shapes that stroke their outline paint their own
+border with a fragment shader that looks up how far along the border each
+pixel is, instead of being masked in two layers. No border uses layers any
+more once the shader and its image have loaded.
+
+`paint()` cost, µs per border, once the shader and its image have loaded:
+
+| Rounded rectangle | Stadium | Beveled | Superellipse | Oval | Star |
+| ----------------: | ------: | ------: | -----------: | ---: | ---: |
+|                 6 |       5 |       6 |            9 |    5 |   10 |
+
+Frame timings, ms:
+
+| Scenario  | Frames | Build avg | Build p99 | Raster avg | Raster p99 |
+| --------- | -----: | --------: | --------: | ---------: | ---------: |
+| rrect_24  |    610 |       1.6 |       2.0 |        2.7 |        3.7 |
+| rrect_96  |    583 |       3.6 |       9.1 |        4.5 |        5.5 |
+| rrect_240 |    555 |       5.2 |      11.2 |        5.7 |        6.5 |
+| star_24   |    592 |       2.3 |       2.9 |        2.3 |        3.1 |
+| star_96   |    580 |       4.4 |      11.1 |        2.7 |        4.0 |
+| star_240  |    531 |       5.9 |      12.9 |        2.9 |        4.2 |
+| mixed_24  |    608 |       2.1 |       2.6 |        2.9 |        4.0 |
+| mixed_96  |    588 |       3.7 |       8.7 |        3.8 |        5.6 |
+| mixed_240 |    566 |       5.7 |      12.5 |        5.0 |        6.3 |
+
+Graphics memory with 240 animated stars on screen: 1,756 MB masked in two
+layers, 159 MB shaded.
+
+The image a shaded border needs is built on its second paint at a given
+size, so the first paint of a shape at a new size costs what it did before:
+in the debug-mode stage benchmark, about 1.1 ms for a superellipse and 1.4
+ms for a star. Building the image when the border is first painted would
+have made that about 3.6 to 4.0 ms, on every frame of an animation of the
+border's size.

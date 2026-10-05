@@ -190,7 +190,7 @@ class _BenchmarkPageState extends State<BenchmarkPage> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     await Future<void>.delayed(const Duration(milliseconds: 300));
-    final Map<BenchmarkShape, double> costs = measurePaintCost();
+    final Map<BenchmarkShape, double> costs = await measurePaintCost();
     if (!context.mounted) {
       return;
     }
@@ -227,42 +227,49 @@ const String paintCostKey = 'paint_cost';
 /// layer, so the default of 1 matches what happens in an app.
 ///
 /// This measures the CPU cost of painting a border, not of rasterizing it.
-Map<BenchmarkShape, double> measurePaintCost({
+///
+/// Borders that are colored by a shader are painted differently until the
+/// shader and their map have loaded in the background, which starts on
+/// their second paint, so each border is painted twice and given a moment
+/// for that before it is timed.
+Future<Map<BenchmarkShape, double>> measurePaintCost({
   double scale = 1.0,
   Size size = const Size(120, 80),
   Duration budget = const Duration(milliseconds: 500),
-}) {
-  return <BenchmarkShape, double>{
-    for (final BenchmarkShape shape in BenchmarkShape.values)
-      shape: () {
-        final ContourGradientBorder border = shape.shape
-            .copyWith(side: const BorderSide(width: 3))
-            .withGradient(_colors);
-        final Rect rect = Offset.zero & size;
-        ui.PictureRecorder recorder = ui.PictureRecorder();
-        Canvas canvas = Canvas(recorder)..scale(scale);
-        void paint(int i) {
-          // Start a new recording now and then, so it does not grow forever.
-          if (i % 64 == 0) {
-            recorder.endRecording().dispose();
-            recorder = ui.PictureRecorder();
-            canvas = Canvas(recorder)..scale(scale);
-          }
-          border.copyWith(startOffset: i / 97).paint(canvas, rect);
-        }
-
-        for (int i = 1; i < 50; i++) {
-          paint(i);
-        }
-        final Stopwatch watch = Stopwatch()..start();
-        int runs = 0;
-        while (watch.elapsed < budget) {
-          paint(runs++);
-        }
+}) async {
+  final Map<BenchmarkShape, double> costs = <BenchmarkShape, double>{};
+  for (final BenchmarkShape shape in BenchmarkShape.values) {
+    final ContourGradientBorder border = shape.shape
+        .copyWith(side: const BorderSide(width: 3))
+        .withGradient(_colors);
+    final Rect rect = Offset.zero & size;
+    ui.PictureRecorder recorder = ui.PictureRecorder();
+    Canvas canvas = Canvas(recorder)..scale(scale);
+    void paint(int i) {
+      // Start a new recording now and then, so it does not grow forever.
+      if (i % 64 == 0) {
         recorder.endRecording().dispose();
-        return watch.elapsedMicroseconds / runs;
-      }(),
-  };
+        recorder = ui.PictureRecorder();
+        canvas = Canvas(recorder)..scale(scale);
+      }
+      border.copyWith(startOffset: i / 97).paint(canvas, rect);
+    }
+
+    paint(1);
+    paint(2);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    for (int i = 3; i < 50; i++) {
+      paint(i);
+    }
+    final Stopwatch watch = Stopwatch()..start();
+    int runs = 0;
+    while (watch.elapsed < budget) {
+      paint(runs++);
+    }
+    recorder.endRecording().dispose();
+    costs[shape] = watch.elapsedMicroseconds / runs;
+  }
+  return costs;
 }
 
 /// [count] borders of [shapes], sized to fit the available space, whose

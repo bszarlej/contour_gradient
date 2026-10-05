@@ -32,9 +32,9 @@ void main() {
   // First, while the device is still cool.
   testWidgets('paint() cost', (WidgetTester tester) async {
     binding.reportData ??= <String, dynamic>{};
+    final Map<BenchmarkShape, double> costs = await measurePaintCost();
     binding.reportData![paintCostKey] = <String, dynamic>{
-      for (final MapEntry<BenchmarkShape, double> e
-          in measurePaintCost().entries)
+      for (final MapEntry<BenchmarkShape, double> e in costs.entries)
         e.key.name: e.value,
     };
   });

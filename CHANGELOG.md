@@ -17,6 +17,17 @@
   way, with geometry that follows their corners exactly: 240 animated bevels
   went from 1.7 GB of graphics memory to 148 MB, and from 18.4 to 5.4 ms of
   raster time per frame. A bevel too thick for its box is still masked.
+* Flutter's shapes that stroke their outline (`StarBorder`, `OvalBorder`, an
+  oval `CircleBorder`, `RoundedSuperellipseBorder` and
+  `ContinuousRectangleBorder`) are now colored by a fragment shader, which
+  the package bundles, while the shape strokes its own border, instead of
+  being masked in two layers: 240 animated stars went from 1.8 GB of
+  graphics memory to 159 MB, and from 19.2 to 2.7 ms of raster time per
+  frame. The shader, and a small image for each shape and size that tells
+  it how far along the border each pixel is, load in the background, the
+  image once a border has been painted twice at the same size; until they
+  are ready, borders are masked as before. Other shapes, including
+  subclasses of these, are still masked.
 * Fixed the inner edge of a `BeveledRectangleBorder` whose sides are shorter
   than its border is wide, which crossed over itself in a small bow tie.
 * Borders now take the device pixel ratio into account when they sample

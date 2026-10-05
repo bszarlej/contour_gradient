@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:contour_gradient/contour_gradient.dart';
 import 'package:contour_gradient/src/color_stops.dart';
 import 'package:contour_gradient/src/contour_band.dart';
+import 'package:contour_gradient/src/contour_map.dart';
+import 'package:contour_gradient/src/contour_shader.dart';
 import 'package:contour_gradient/src/contour_strip.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +25,16 @@ Future<Pixels> render(
   double pad = 20,
   bool atOrigin = false,
 }) async {
+  // A border that strokes its own outline is masked until the map it is
+  // shaded with is uploaded, which its second paint starts.
+  for (int i = 0; i < 2; i++) {
+    border.paint(
+      Canvas(ui.PictureRecorder()),
+      Offset(pad, pad) & size,
+      textDirection: TextDirection.ltr,
+    );
+  }
+  await contourMapsUploaded();
   final ui.PictureRecorder recorder = ui.PictureRecorder();
   final Canvas canvas = Canvas(recorder);
   if (atOrigin) {
@@ -114,6 +126,11 @@ Matcher isColorCloseTo(Color expected, {double tolerance = 0.03}) {
 }
 
 void main() {
+  setUpAll(() async {
+    await loadContourShader();
+    expect(contourShader(), isNotNull, reason: 'the shader must load');
+  });
+
   group('coverage matches the shape painted by Flutter', () {
     // Each shape is painted as a solid border by Flutter, and as a gradient
     // border whose colors are all the same. The two must cover the same
@@ -736,10 +753,54 @@ void main() {
     });
   });
 
+  test('shaded borders look like masked ones', () async {
+    const List<Color> colors = <Color>[
+      Color(0xFF7F00FF),
+      Color(0xFF00C6FF),
+      Color(0xFFFF4E50),
+      Color(0xFF7F00FF),
+    ];
+    for (final OutlinedBorder shape in <OutlinedBorder>[
+      const StarBorder(innerRadiusRatio: 0.45),
+      const OvalBorder(),
+      const RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(30)),
+      ),
+      const ContinuousRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(40)),
+      ),
+    ]) {
+      for (final double offset in <double>[0, 0.3, -1.6]) {
+        final ContourGradientBorder border = ContourGradientBorder(
+          colors: colors,
+          startOffset: offset,
+          shape: shape,
+          side: const BorderSide(width: 6),
+        );
+        final Pixels shaded = await render(border, const Size(140, 110));
+        debugDisableContourShader = true;
+        final Pixels masked = await render(border, const Size(140, 110));
+        debugDisableContourShader = false;
+        int worst = 0;
+        for (int i = 0; i < shaded.data.lengthInBytes; i++) {
+          worst = math.max(
+            worst,
+            (shaded.data.getUint8(i) - masked.data.getUint8(i)).abs(),
+          );
+        }
+        expect(worst, lessThanOrEqualTo(24), reason: '$shape at $offset');
+      }
+    }
+  });
+
   group('layers', () {
     // Counts the layers a border paints with, and passes everything else on
     // to a real canvas.
-    int layersOf(OutlinedBorder shape, {double width = 3}) {
+    int layersOf(
+      OutlinedBorder shape, {
+      double width = 3,
+      Rect rect = const Rect.fromLTWH(10, 10, 140, 90),
+    }) {
       final _LayerCountingCanvas canvas = _LayerCountingCanvas(
         Canvas(ui.PictureRecorder()),
       );
@@ -747,13 +808,21 @@ void main() {
         colors: const <Color>[red, blue],
         shape: shape,
         side: BorderSide(width: width),
-      ).paint(
-        canvas,
-        const Rect.fromLTWH(10, 10, 140, 90),
-        textDirection: TextDirection.ltr,
-      );
+      ).paint(canvas, rect, textDirection: TextDirection.ltr);
       return canvas.layers;
     }
+
+    const List<OutlinedBorder> stroked = <OutlinedBorder>[
+      StarBorder(),
+      OvalBorder(),
+      CircleBorder(eccentricity: 0.5),
+      RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
+      ContinuousRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
+    ];
 
     test('are not used by shapes that can be clipped', () {
       for (final OutlinedBorder shape in <OutlinedBorder>[
@@ -777,19 +846,59 @@ void main() {
       }
     });
 
-    test('are used by shapes that stroke their border', () {
-      for (final OutlinedBorder shape in <OutlinedBorder>[
-        const StarBorder(),
-        const OvalBorder(),
-        const RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
-        ),
-        const ContinuousRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
-        ),
-      ]) {
+    test('are not used by shapes that stroke their border', () async {
+      for (final OutlinedBorder shape in stroked) {
+        layersOf(shape);
+        layersOf(shape);
+        await contourMapsUploaded();
+        expect(layersOf(shape), 0, reason: '$shape');
+      }
+    });
+
+    test('are used by shapes that stroke their border until their map is '
+        'ready', () async {
+      for (final OutlinedBorder shape in stroked) {
+        expect(
+          layersOf(shape, rect: const Rect.fromLTWH(0, 0, 141, 91)),
+          2,
+          reason: '$shape',
+        );
+      }
+    });
+
+    test('are used by a border painted only once at its size', () async {
+      const Rect rect = Rect.fromLTWH(0, 0, 143, 93);
+      layersOf(const StarBorder(), rect: rect);
+      await contourMapsUploaded();
+      // No map was built for the first paint, so the second one is masked
+      // too, and starts building it.
+      expect(layersOf(const StarBorder(), rect: rect), 2);
+      await contourMapsUploaded();
+      expect(layersOf(const StarBorder(), rect: rect), 0);
+    });
+
+    test('are used by shapes that stroke their border without the shader', () {
+      debugDisableContourShader = true;
+      addTearDown(() => debugDisableContourShader = false);
+      for (final OutlinedBorder shape in stroked) {
         expect(layersOf(shape), 2, reason: '$shape');
       }
+    });
+
+    test('are used by a border too large for a map', () async {
+      // 2400 by 2400 pixels at the tests' device pixel ratio of 3.
+      const Rect huge = Rect.fromLTWH(0, 0, 800, 800);
+      layersOf(const StarBorder(), rect: huge);
+      layersOf(const StarBorder(), rect: huge);
+      await contourMapsUploaded();
+      expect(layersOf(const StarBorder(), rect: huge), 2);
+    });
+
+    test('are used by subclasses of shapes that stroke their border', () async {
+      layersOf(const _StarSubclass());
+      layersOf(const _StarSubclass());
+      await contourMapsUploaded();
+      expect(layersOf(const _StarSubclass()), 2);
     });
 
     test('are not used by a bevel whose sides are short', () {
@@ -1551,4 +1660,9 @@ class _LayerCountingCanvas implements Canvas {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName}');
+}
+
+/// A [StarBorder] that might paint differently.
+class _StarSubclass extends StarBorder {
+  const _StarSubclass();
 }

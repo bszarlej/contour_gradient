@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
+import 'contour_map.dart';
 import 'contour_strip.dart';
 
 /// Triangles covering some [ContourStrip]s, to be painted with a gradient
@@ -17,7 +18,17 @@ import 'contour_strip.dart';
 /// The band does not depend on the gradient, so it can be built once and
 /// painted with any colors and start offset; see [shader].
 class ContourBand {
-  ContourBand._(this.vertices, this.bounds, this.length, this.area);
+  ContourBand._(
+    this._positions,
+    this._coordinates,
+    this.bounds,
+    this.length,
+    this.area,
+  ) : vertices = ui.Vertices.raw(
+        ui.VertexMode.triangles,
+        _positions,
+        textureCoordinates: _coordinates,
+      );
 
   /// Builds the band covering [strips], with the given [area]. Returns null if
   /// the strips have no length.
@@ -71,16 +82,16 @@ class ContourBand {
     }
 
     return ContourBand._(
-      ui.Vertices.raw(
-        ui.VertexMode.triangles,
-        positions,
-        textureCoordinates: coordinates,
-      ),
+      positions,
+      coordinates,
       Rect.fromLTRB(left, top, right, bottom),
       length,
       area,
     );
   }
+
+  final Float32List _positions;
+  final Float32List _coordinates;
 
   /// The triangles of the band, with texture coordinates as described in
   /// [ContourBand].
@@ -108,15 +119,12 @@ class ContourBand {
   /// their shader is an image, and otherwise first renders the shader into a
   /// new texture on every draw.
   Shader shader(List<Color> colors, List<double> stops, double startOffset) {
-    final ui.Image image = gradientImageCache.get(
-      _GradientKey(colors, stops),
-      () => _gradientImage(colors, stops),
-    );
+    final ui.Image image = gradientImage(colors, stops);
     // Keep the shader's coordinates small, however large the offset.
     final double shift = (startOffset - startOffset.floorToDouble()) * length;
     // Maps the image, one period of the gradient, onto the band's length.
     final Float64List matrix = Float64List(16)
-      ..[0] = length / _gradientImageWidth
+      ..[0] = length / gradientImageWidth
       ..[5] = 1
       ..[10] = 1
       ..[12] = -shift
@@ -130,28 +138,71 @@ class ContourBand {
     );
   }
 
-  /// Releases the band's vertices.
-  void dispose() => vertices.dispose();
+  /// The band's [ContourMap] at [scale] pixels per logical pixel, or null
+  /// while it is being built, or if it would be too large.
+  ///
+  /// The map is only built on the second call, as a band painted only once,
+  /// as in an animation of its size, would not get to use it. Every call
+  /// must pass the same [scale].
+  ContourMap? map(double scale) {
+    if (!_mapBuilt) {
+      if (!_mapWanted) {
+        _mapWanted = true;
+        return null;
+      }
+      _mapBuilt = true;
+      _map = ContourMap.build(
+        positions: _positions,
+        coordinates: _coordinates,
+        bounds: bounds,
+        length: length,
+        scale: scale,
+      );
+    }
+    assert(_map == null || _map!.scale == scale);
+    return _map?.image == null ? null : _map;
+  }
+
+  ContourMap? _map;
+  bool _mapWanted = false;
+  bool _mapBuilt = false;
+
+  /// Releases the band's vertices and map.
+  void dispose() {
+    vertices.dispose();
+    _map?.dispose();
+  }
+}
+
+/// An image of one period of the gradient described by [colors] and
+/// [stops], [gradientImageWidth] pixels wide and one pixel high.
+ui.Image gradientImage(List<Color> colors, List<double> stops) {
+  return gradientImageCache.get(
+    _GradientKey(colors, stops),
+    () => _gradientImage(colors, stops),
+  );
 }
 
 /// The width of the images of gradients, in pixels.
 ///
 /// A hard stop is blurred over a pixel of the image, which is less than a
 /// logical pixel on borders up to this long.
-const int _gradientImageWidth = 4096;
+///
+/// shaders/contour_gradient.frag assumes this width.
+const int gradientImageWidth = 4096;
 
 /// An image of the gradient described by [colors] and [stops], one pixel
 /// high.
 ui.Image _gradientImage(List<Color> colors, List<double> stops) {
   final ui.PictureRecorder recorder = ui.PictureRecorder();
-  const Rect rect = Rect.fromLTWH(0, 0, _gradientImageWidth * 1.0, 1);
+  const Rect rect = Rect.fromLTWH(0, 0, gradientImageWidth * 1.0, 1);
   Canvas(recorder).drawRect(
     rect,
     Paint()
       ..shader = ui.Gradient.linear(rect.topLeft, rect.topRight, colors, stops),
   );
   final ui.Picture picture = recorder.endRecording();
-  final ui.Image image = picture.toImageSync(_gradientImageWidth, 1);
+  final ui.Image image = picture.toImageSync(gradientImageWidth, 1);
   picture.dispose();
   return image;
 }
