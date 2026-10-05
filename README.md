@@ -1,5 +1,10 @@
 # contour_gradient
 
+[![Pub](https://img.shields.io/pub/v/contour_gradient.svg?style=popout)](https://pub.dev/packages/contour_gradient)
+[![Pub Points](https://img.shields.io/pub/points/contour_gradient.svg?style=popout)](https://pub.dev/packages/contour_gradient/score)
+[![Pub Likes](https://img.shields.io/pub/likes/contour_gradient.svg?style=popout)](https://pub.dev/packages/contour_gradient/score)
+[![Pub Downloads](https://img.shields.io/pub/dm/contour_gradient.svg?style=popout)](https://pub.dev/packages/contour_gradient)
+
 A Flutter `ShapeBorder` that paints a gradient along the length of a border,
 for any `OutlinedBorder` shape.
 
