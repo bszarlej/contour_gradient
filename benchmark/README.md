@@ -68,7 +68,7 @@ Frame timings, ms:
 | mixed_96  |    200 |      20.0 |      23.0 |       15.6 |       17.1 |
 | mixed_240 |    104 |      42.5 |      53.0 |       24.9 |       35.8 |
 
-## Cached geometry, GPU gradient (unreleased)
+## 1.2.0, step 1: cached geometry, GPU gradient
 
 Same device and conditions as the baseline. Borders now also sample their
 outline at the device pixel ratio, which 1.1.0 missed.
@@ -93,7 +93,7 @@ Frame timings, ms:
 | mixed_96  |    423 |       5.7 |      13.3 |       10.4 |       12.8 |
 | mixed_240 |    289 |       9.4 |      14.9 |       17.2 |       17.9 |
 
-## Rounded rectangles clipped, not masked (unreleased)
+## 1.2.0, step 2: rounded rectangles clipped, not masked
 
 Same device and conditions. Rounded rectangles, stadiums and circles are now
 clipped to their area instead of masked in two layers; other shapes still use
@@ -132,7 +132,7 @@ of `adb shell dumpsys meminfo com.example.contour_gradient_example` while
 Each layer costs a few megabytes per border on Impeller, far more than the
 border's pixels, so layers, not geometry, dominate memory.
 
-## Bevels and linear borders clipped too (unreleased)
+## 1.2.0, step 3: bevels and linear borders clipped too
 
 Same device and conditions. Beveled and linear borders get bands that follow
 their corners exactly, and are clipped like rounded rectangles. Only shapes
@@ -162,7 +162,7 @@ Frame timings, ms:
 Graphics memory with 240 animated bevels on screen: 1,677 MB masked in two
 layers, 148 MB clipped.
 
-## Stroked shapes shaded (unreleased)
+## 1.2.0: stroked shapes shaded
 
 Same device and conditions. Shapes that stroke their outline paint their own
 border with a fragment shader that looks up how far along the border each

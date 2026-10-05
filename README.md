@@ -196,16 +196,34 @@ Any `OutlinedBorder` works, including `RoundedRectangleBorder`,
 
 ## Performance
 
-Every border is painted by masking a colored band with the shape's own border,
-so its edges match Flutter's exactly. That costs two `Canvas.saveLayer` calls
-per paint.
+Borders are cheap to animate, even many at once. A border's geometry is built
+the first time it is painted at a given shape, width and size, and is reused
+while its colors, stops or `startOffset` change; the gradient itself is
+applied on the GPU. Painting an animated border takes about 5–10 µs of UI
+thread time, and on a Galaxy S24, 240 animated borders on screen at once
+render at 120 frames per second.
 
-For `RoundedRectangleBorder`, `StadiumBorder` and circular `CircleBorder`, the
-band is quick to build and costs well under a millisecond of CPU time, even
-when animated. Other shapes take about 1–2 ms per paint on a desktop machine.
-That is fine for static borders, which are only painted when their area
-repaints, and for a few animated ones. Animating many such borders at once can
-drop frames on slower phones.
+How the gradient is kept to the border depends on the shape, and none of the
+ways uses `Canvas.saveLayer`:
+
+- `RoundedRectangleBorder`, `StadiumBorder`, circular `CircleBorder`,
+  `BeveledRectangleBorder` and `LinearBorder` are clipped to the exact area
+  of their border.
+- `StarBorder`, `OvalBorder`, oval `CircleBorder`,
+  `RoundedSuperellipseBorder` and `ContinuousRectangleBorder` stroke their
+  own border with a fragment shader that the package bundles. The shader, and
+  a small image for each shape and size, load in the background, so the
+  first frames of such a border, and of each new size of it, are painted the
+  way other shapes are.
+- Other shapes, including your own subclasses, are painted with a colored
+  band masked by the shape's own border, which costs two `Canvas.saveLayer`
+  calls per paint. Layers take a lot of memory, so this is fine for static
+  borders and a few animated ones, but many animated borders of such a shape
+  at once can strain the GPU.
+
+Either way, the border covers exactly the pixels Flutter's own border would.
+
+The numbers behind this are in [benchmark/README.md](benchmark/README.md).
 
 ## Limitations
 
@@ -213,7 +231,7 @@ drop frames on slower phones.
   wide that it meets itself, as across the arms of a `StarBorder` or inside
   the curves of a rounded one, each part takes the color of the nearest part
   of the outline. The colors then meet at sharp seams, and a few pixels along
-  them can be left uncolored.
+  them can take the wrong color or be left uncolored.
 
 ## Example
 
