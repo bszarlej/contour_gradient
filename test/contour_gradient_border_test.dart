@@ -564,9 +564,12 @@ void main() {
         ),
         size,
       );
-      expect(pixels.at(50, 5), isColorCloseTo(lerpAt(0.375)));
-      // 0.875 + 0.25 is past the end, so it comes round to 0.125.
-      expect(pixels.at(5, 50), isColorCloseTo(lerpAt(0.125)));
+      // The colors move a quarter of the way round, clockwise: the middle of
+      // the top side, 0.125 of the way round, now has the color that was a
+      // quarter of the way before it, which comes round from 0.875.
+      expect(pixels.at(50, 5), isColorCloseTo(lerpAt(0.875)));
+      // The middle of the left side, 0.875 of the way round.
+      expect(pixels.at(5, 50), isColorCloseTo(lerpAt(0.625)));
     });
 
     test('startOffsets a whole number apart look the same', () async {
@@ -1106,9 +1109,14 @@ void main() {
         // The band built for the first box is reused for this one.
         final Pixels far = await render(border, size, pad: 37);
         expect(contourBandCache.length, 1);
+        // Up to a step of rounding, where the gradient image is filtered.
         for (double y = -8; y < size.height + 8; y++) {
           for (double x = -8; x < size.width + 8; x++) {
-            expect(far.at(x, y), near.at(x, y), reason: 'at ($x, $y)');
+            expect(
+              far.at(x, y),
+              isColorCloseTo(near.at(x, y), tolerance: 1.5 / 255),
+              reason: 'at ($x, $y)',
+            );
           }
         }
       });

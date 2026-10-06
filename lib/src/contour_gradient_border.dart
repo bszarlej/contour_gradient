@@ -27,7 +27,7 @@ import 'contour_strip.dart';
 /// Position 0.0 of the gradient is the point of the outline nearest the
 /// top-left corner of the box, and the gradient runs clockwise from there.
 /// Use [startOffset] to move it; animating [startOffset] from 0.0 to 1.0
-/// moves the gradient once around the border.
+/// moves the gradient once around the border, clockwise.
 ///
 /// Because this is itself an [OutlinedBorder], it can be used anywhere
 /// Flutter accepts a shape. The easiest way to make one is to call

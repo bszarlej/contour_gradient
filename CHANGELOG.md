@@ -1,3 +1,10 @@
+## 1.2.2
+
+* Fixed `startOffset` moving the gradient anticlockwise, the opposite of
+  what the documentation says. Increasing it now moves the gradient
+  clockwise, so animations of it turn the other way than before: to keep the
+  old direction, animate from 0.0 to -1.0 instead of to 1.0.
+
 ## 1.2.1
 
 * Use contour_gradient version 1.2.0 in the example app

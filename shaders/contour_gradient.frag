@@ -20,8 +20,8 @@ uniform vec2 uOrigin;
 uniform float uScale;
 // The size of the map, in pixels.
 uniform vec2 uMapSize;
-// How far the gradient is moved along the border, as a fraction of its
-// length.
+// How far the gradient is moved forwards along the border, as a fraction of
+// its length.
 uniform float uOffset;
 uniform sampler2D uMap;
 uniform sampler2D uGradient;
@@ -43,8 +43,9 @@ void main() {
   );
   vec3 bytes = floor(texture(uMap, (pixel + 0.5) / uMapSize).rgb * 255.0 + 0.5);
   float along = dot(bytes, vec3(65536.0, 256.0, 1.0)) / 16777216.0;
-  // The gradient repeats, with its pixels centred on their positions.
-  float x = fract(along + uOffset) * kGradientWidth - 0.5;
+  // The gradient moves forwards along the border, clockwise, as the offset
+  // grows. It repeats, with its pixels centred on their positions.
+  float x = fract(along - uOffset) * kGradientWidth - 0.5;
   float i = floor(x);
   fragColor = mix(gradientPixel(i), gradientPixel(i + 1.0), x - i);
 }

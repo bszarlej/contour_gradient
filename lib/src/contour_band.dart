@@ -122,12 +122,14 @@ class ContourBand {
     final ui.Image image = gradientImage(colors, stops);
     // Keep the shader's coordinates small, however large the offset.
     final double shift = (startOffset - startOffset.floorToDouble()) * length;
-    // Maps the image, one period of the gradient, onto the band's length.
+    // Maps the image, one period of the gradient, onto the band's length,
+    // starting [shift] along it, so that the gradient moves forwards along
+    // the band, clockwise, as [startOffset] grows.
     final Float64List matrix = Float64List(16)
       ..[0] = length / gradientImageWidth
       ..[5] = 1
       ..[10] = 1
-      ..[12] = -shift
+      ..[12] = shift
       ..[15] = 1;
     return ImageShader(
       image,

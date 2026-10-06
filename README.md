@@ -103,8 +103,9 @@ one for some states and the other for the rest.
 ### Animation
 
 `startOffset` moves the gradient along the border, as a fraction of its
-length. Animating it from 0.0 to 1.0 moves the gradient once around, and
-because 0.0 and 1.0 look the same, a repeating animation has no visible jump.
+length. Animating it from 0.0 to 1.0 moves the gradient once around,
+clockwise, and because 0.0 and 1.0 look the same, a repeating animation has
+no visible jump. Animate it from 0.0 to -1.0 to go anticlockwise.
 The example below repeats the first color at the end, so no hard edge travels
 around the border either (see [How colors are placed](#how-colors-are-placed)).
 
