@@ -1,3 +1,9 @@
+## 1.2.3
+
+* Separate edges of a `LinearBorder`, such as a top and a bottom edge, now
+  each run the whole gradient, so they look alike. They used to share it one
+  after the other. Edges that meet at a corner still form one line.
+
 ## 1.2.2
 
 * Fixed `startOffset` moving the gradient anticlockwise, the opposite of

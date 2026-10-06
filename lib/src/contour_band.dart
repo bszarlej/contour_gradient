@@ -12,8 +12,9 @@ import 'contour_strip.dart';
 ///
 /// The x texture coordinate of each vertex is its distance along the strips,
 /// taken one after the other, so a shader whose colors change along the x
-/// axis colors the band along its length. The y texture coordinate is 0 on
-/// the outer edge and 1 on the inner edge.
+/// axis colors the band along its length. A shader that repeats every
+/// [length] runs once along the band. The y texture coordinate is 0 on the
+/// outer edge and 1 on the inner edge.
 ///
 /// The band does not depend on the gradient, so it can be built once and
 /// painted with any colors and start offset; see [shader].
@@ -32,7 +33,14 @@ class ContourBand {
 
   /// Builds the band covering [strips], with the given [area]. Returns null if
   /// the strips have no length.
-  static ContourBand? fromStrips(List<ContourStrip> strips, {Path? area}) {
+  ///
+  /// If [repeatEach] is true, the x texture coordinates are instead spaced
+  /// so that a shader that repeats every [length] runs once along each strip.
+  static ContourBand? fromStrips(
+    List<ContourStrip> strips, {
+    Path? area,
+    bool repeatEach = false,
+  }) {
     int quads = 0;
     double length = 0;
     for (final ContourStrip strip in strips) {
@@ -65,12 +73,18 @@ class ContourBand {
     }
 
     double travelled = 0;
-    for (final ContourStrip strip in strips) {
+    for (int s = 0; s < strips.length; s++) {
+      final ContourStrip strip = strips[s];
       final List<Offset> outer = strip.outer;
       final List<Offset> inner = strip.inner;
+      // Where each pair is along the band.
+      double along(int k) => repeatEach
+          ? (s + (strip.length > 0 ? strip.distances[k] / strip.length : 0)) *
+                length
+          : travelled + strip.distances[k];
       for (int k = 0; k < outer.length - 1; k++) {
-        final double ua = travelled + strip.distances[k];
-        final double ub = travelled + strip.distances[k + 1];
+        final double ua = along(k);
+        final double ub = along(k + 1);
         add(outer[k], ua, 0);
         add(inner[k], ua, 1);
         add(inner[k + 1], ub, 1);

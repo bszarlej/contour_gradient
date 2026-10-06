@@ -186,7 +186,8 @@ with plain `OutlinedBorder`s too, which it treats as a single color.
   top-left corner of the box: an underline runs left to right, and a start
   and bottom edge run down and then right. If all four edges meet, they form
   a loop like a rectangle. Separate lines, such as a top and a bottom edge,
-  share the gradient one after the other.
+  each run the whole gradient, so a top and a bottom edge both run left to
+  right and look alike.
 - On an open line, such as an underline, the gradient runs from the first
   color at one end to the last color at the other. When `startOffset` moves
   it along, the colors that pass one end come back in at the other, so repeat

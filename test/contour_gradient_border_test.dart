@@ -694,6 +694,30 @@ void main() {
       }
     });
 
+    test('separate LinearBorder edges each run the whole gradient', () async {
+      final Pixels pixels = await render(
+        const ContourGradientBorder(
+          colors: <Color>[red, blue],
+          shape: LinearBorder(
+            top: LinearBorderEdge(),
+            bottom: LinearBorderEdge(),
+          ),
+          side: side,
+        ),
+        size,
+      );
+      // Both lines run left to right, from x = -1 to 101, like an underline.
+      for (final double x in <double>[2, 25, 50, 75, 97]) {
+        final Color expected = lerpAt((x + 1.5) / 102);
+        expect(pixels.at(x, 5), isColorCloseTo(expected), reason: 'top, $x');
+        expect(
+          pixels.at(x, 95),
+          isColorCloseTo(expected),
+          reason: 'bottom, $x',
+        );
+      }
+    });
+
     test('LinearBorder edges that meet form one line', () async {
       final Pixels pixels = await render(
         const ContourGradientBorder(

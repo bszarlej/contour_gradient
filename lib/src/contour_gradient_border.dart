@@ -303,10 +303,12 @@ class ContourGradientBorder extends OutlinedBorder {
           return ContourBand.fromStrips(
             mitered,
             area: _filledOutline(box, textDirection),
+            repeatEach: shape is LinearBorder,
           );
         }
         return ContourBand.fromStrips(
           _stripsAlongShape(box, textDirection, margin, bandScale),
+          repeatEach: shape is LinearBorder,
         );
       },
     );
@@ -809,9 +811,9 @@ class ContourGradientBorder extends OutlinedBorder {
   ///
   /// Edges that meet at a corner are joined into one line. Each line runs
   /// from its end nearest the top-left corner of [rect], and the lines are
-  /// ordered by that end. If all four edges meet, they form a loop. The ends
-  /// of each line are extended by [margin], to color the anti-aliased pixels
-  /// at the ends of the edges.
+  /// ordered by that end. If all four edges meet, they form a loop. Each
+  /// line runs the whole gradient. The ends of each line are extended by
+  /// [margin], to color the anti-aliased pixels at the ends of the edges.
   List<(List<Offset>, bool)> _linearBorderLines(
     LinearBorder shape,
     Rect rect,

@@ -201,7 +201,9 @@ class ContourMap {
       if (u.isNaN) {
         continue;
       }
-      final int value = (u / length * 16777216).floor().clamp(0, 16777215);
+      // The band can run along more than one period of the gradient.
+      final double fraction = u / length - (u / length).floorToDouble();
+      final int value = (fraction * 16777216).floor().clamp(0, 16777215);
       pixels[i * 4] = value >> 16;
       pixels[i * 4 + 1] = (value >> 8) & 0xFF;
       pixels[i * 4 + 2] = value & 0xFF;
